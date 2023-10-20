@@ -11,7 +11,7 @@ def set_to_json(input_file, output_file):
     config = {}
 
     with open(input_file, 'r') as file:
-        current_path = []  # Store the current hierarchy path
+        current_node = config
         for line in file:
             line = line.strip()
             
@@ -19,19 +19,19 @@ def set_to_json(input_file, output_file):
             set_match = re.match(set_pattern, line)
             if set_match:
                 path, value = set_match.groups()
-                current_path.append(path)
-                current_node = config
-                for p in current_path[:-1]:
-                    current_node = current_node.setdefault(p, {})
-                current_node[current_path[-1]] = value
+                parts = path.split()
+                for part in parts:
+                    current_node = current_node.setdefault(part, {})
+                current_node = value
 
             # Match a delete statement
             delete_match = re.match(delete_pattern, line)
             if delete_match:
                 path, value = delete_match.groups()
+                parts = path.split()
                 current_node = config
-                for p in current_path:
-                    current_node = current_node.setdefault(p, {})
+                for part in parts:
+                    current_node = current_node.setdefault(part, {})
                 if value in current_node:
                     del current_node[value]
 
@@ -39,7 +39,9 @@ def set_to_json(input_file, output_file):
             hierarchy_match = re.match(hierarchy_pattern, line)
             if hierarchy_match:
                 path = hierarchy_match.group(1)
-                current_path.append(path)
+                parts = path.split()
+                for part in parts:
+                    current_node = current_node.setdefault(part, {})
 
     # Write the JSON to the output file
     with open(output_file, 'w') as outfile:
