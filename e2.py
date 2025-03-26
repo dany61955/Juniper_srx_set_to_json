@@ -43,9 +43,11 @@ def translate_uuid(uuid_list, obj_dict, detailed=False):
         obj_value = obj_dict.get(uuid, uuid)
         if isinstance(obj_value, list) and detailed:
             result.append("\n".join(obj_value))  # Expand group members on new lines
+        elif isinstance(obj_value, list):
+            result.append(", ".join(obj_value))
         else:
             result.append(obj_value)
-    return result
+    return "\n".join(result)
 
 # Load CSV rules
 def load_rules(csv_path, obj_dict, detailed=False):
@@ -53,9 +55,9 @@ def load_rules(csv_path, obj_dict, detailed=False):
     with open(csv_path, "r") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            row["Source"] = "\n".join(translate_uuid(row.get("Source", "").split("; "), obj_dict, detailed))
-            row["Destination"] = "\n".join(translate_uuid(row.get("Destination", "").split("\n"), obj_dict, detailed))
-            row["Service"] = "\n".join(translate_uuid(row.get("Service", "").split("; "), obj_dict, detailed))
+            row["Source"] = translate_uuid(row.get("Source", "").split(";"), obj_dict, detailed)
+            row["Destination"] = translate_uuid(row.get("Destination", "").split(";"), obj_dict, detailed)
+            row["Service"] = translate_uuid(row.get("Service", "").split(";"), obj_dict, detailed)
             row["Action"] = obj_dict.get(row.get("Action", ""), row.get("Action", ""))
             row["Comments"] = row.get("Comments", "").replace(",", " ").replace("\n", " ")
             rules.append(row)
@@ -73,6 +75,7 @@ html_template = """
         table { width: 100%; border-collapse: collapse; }
         th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
         th { background-color: #f2f2f2; }
+        .hidden { display: none; }
     </style>
     <script>
         function toggleDetails() {
