@@ -9,7 +9,7 @@ def load_objects(file_path):
     
     obj_dict = {}
     for obj in objects:
-        obj_uuid = obj.get("uuid")
+        obj_uuid = obj.get("uid")
         obj_type = obj.get("type")
         obj_name = obj.get("name", obj_uuid)
         obj_comment = obj.get("comments", "")
@@ -33,19 +33,22 @@ def load_objects(file_path):
     return obj_dict
 
 # Translate UUIDs to actual names
-def translate_uuid(uuid_list, obj_dict):
+def translate_uuid(uuid_list, obj_dict, detailed=False):
+    if detailed:
+        return [f"{obj_dict.get(uuid, uuid)} ({uuid})" for uuid in uuid_list]
     return [obj_dict.get(uuid, uuid) for uuid in uuid_list]
 
 # Load CSV rules
-def load_rules(csv_path, obj_dict):
+def load_rules(csv_path, obj_dict, detailed=False):
     rules = []
     with open(csv_path, "r") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            row["Source"] = translate_uuid(row["Source"].split("; "), obj_dict)
-            row["Destination"] = translate_uuid(row["Destination"].split("\n"), obj_dict)
-            row["Service"] = translate_uuid(row["Service"].split("; "), obj_dict)
-            row["Action"] = obj_dict.get(row["Action"], row["Action"])
+            row["Source"] = translate_uuid(row.get("Source", "").split("; "), obj_dict, detailed)
+            row["Destination"] = translate_uuid(row.get("Destination", "").split("\n"), obj_dict, detailed)
+            row["Service"] = translate_uuid(row.get("Service", "").split("; "), obj_dict, detailed)
+            row["Action"] = obj_dict.get(row.get("Action", ""), row.get("Action", ""))
+            row["Comments"] = row.get("Comments", "").replace(",", " ").replace("\n", " ")
             rules.append(row)
     return rules
 
@@ -60,29 +63,42 @@ html_template = """
         .rule { border: 1px solid #ddd; padding: 10px; margin: 10px; }
         .details { display: none; }
         button { margin: 5px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
     </style>
     <script>
-        function toggleDetails(id) {
-            var details = document.getElementById(id);
-            details.style.display = details.style.display === 'block' ? 'none' : 'block';
+        function toggleDetails() {
+            var elements = document.querySelectorAll(".details");
+            for (var i = 0; i < elements.length; i++) {
+                elements[i].style.display = elements[i].style.display === 'none' ? 'block' : 'none';
+            }
         }
     </script>
 </head>
 <body>
     <h2>Firewall Rules</h2>
-    {% for rule in rules %}
-    <div class="rule">
-        <strong>Rule Name:</strong> {{ rule["Name"] }}<br>
-        <strong>Action:</strong> {{ rule["Action"] }}<br>
-        <button onclick="toggleDetails('details{{ loop.index }}')">Toggle Details</button>
-        <div id="details{{ loop.index }}" class="details">
-            <strong>Source:</strong> <br> {{ rule["Source"] | join('<br>') }}<br>
-            <strong>Destination:</strong> <br> {{ rule["Destination"] | join('<br>') }}<br>
-            <strong>Service:</strong> <br> {{ rule["Service"] | join('<br>') }}<br>
-            <strong>Comments:</strong> {{ rule["Comments"] }}
-        </div>
-    </div>
-    {% endfor %}
+    <button onclick="toggleDetails()">Toggle Object Details</button>
+    <table>
+        <tr>
+            <th>Rule Name</th>
+            <th>Action</th>
+            <th>Source</th>
+            <th>Destination</th>
+            <th>Service</th>
+            <th>Comments</th>
+        </tr>
+        {% for rule in rules %}
+        <tr>
+            <td>{{ rule["Name"] }}</td>
+            <td>{{ rule["Action"] }}</td>
+            <td class="details">{{ rule["Source"] | join('<br>') }}</td>
+            <td class="details">{{ rule["Destination"] | join('<br>') }}</td>
+            <td class="details">{{ rule["Service"] | join('<br>') }}</td>
+            <td>{{ rule["Comments"] }}</td>
+        </tr>
+        {% endfor %}
+    </table>
 </body>
 </html>
 """
@@ -101,7 +117,7 @@ def main():
     output_html = "rules_interactive.html"
     
     obj_dict = load_objects(objects_file)
-    rules = load_rules(rules_file, obj_dict)
+    rules = load_rules(rules_file, obj_dict, detailed=True)
     generate_html(rules, output_html)
     print(f"Interactive report generated: {output_html}")
 
