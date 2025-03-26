@@ -230,10 +230,12 @@ html_template = """
             background-color: #45a049;
         }
         .error { color: red; font-weight: bold; }
-        .simple { display: table-cell; }
+        
+        /* Toggle visibility */
+        .simple { display: inline; }
         .detailed { display: none; }
-        .toggle-active .simple { display: none; }
-        .toggle-active .detailed { display: table-cell; }
+        .toggle-active .simple { display: none !important; }
+        .toggle-active .detailed { display: inline !important; }
 
         /* Object type styling */
         .group-name { color: #2196F3; font-weight: bold; }
@@ -249,21 +251,12 @@ html_template = """
         .action-accept { color: #4CAF50; font-weight: bold; }
         .action-drop { color: #F44336; font-weight: bold; }
     </style>
-    <script>
-        function toggleDetails() {
-            var table = document.querySelector('table');
-            table.classList.toggle('toggle-active');
-            var button = document.querySelector('button');
-            button.textContent = table.classList.contains('toggle-active') ? 
-                'Show Simple View' : 'Show Detailed View';
-        }
-    </script>
 </head>
 <body>
     <h2>Firewall Rules</h2>
-    <button onclick="toggleDetails()">Show Detailed View</button>
+    <button onclick="toggleView()">Show Detailed View</button>
     {% if rules %}
-    <table>
+    <table id="rulesTable">
         <tr>
             <th>Rule Name</th>
             <th>Action</th>
@@ -295,6 +288,21 @@ html_template = """
     {% else %}
     <p class="error">No rules found or error loading rules data.</p>
     {% endif %}
+
+    <script>
+        function toggleView() {
+            const table = document.getElementById('rulesTable');
+            const button = document.querySelector('button');
+            
+            if (table.classList.contains('toggle-active')) {
+                table.classList.remove('toggle-active');
+                button.textContent = 'Show Detailed View';
+            } else {
+                table.classList.add('toggle-active');
+                button.textContent = 'Show Simple View';
+            }
+        }
+    </script>
 </body>
 </html>
 """
