@@ -158,8 +158,11 @@ def translate_uuid(uuid_list, obj_dict, detailed=False):
         if not obj:
             # Extract last 4 characters of the UID, or use the entire UID if it's shorter
             uid_suffix = uuid[-4:] if len(uuid) >= 4 else uuid
-            warning_html = f'<span class="untranslated-uid" title="Failed to translate UID: {uuid}">Failed to translate: ...{uid_suffix}</span>'
-            result.append(warning_html)
+            warning_html = f'<div><span class="untranslated-uid" title="Full UID: {uuid}">UID: ...{uid_suffix}</span></div>'
+            if detailed:
+                result.append(warning_html)
+            else:
+                result.append(f'<span class="untranslated-uid" title="Full UID: {uuid}">...{uid_suffix}</span>')
             continue
             
         if obj["type"] == "group":
