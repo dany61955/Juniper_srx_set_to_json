@@ -184,7 +184,14 @@ def load_rules(csv_path, obj_dict):
     rules = []
     try:
         with open(csv_path, "r", encoding='utf-8-sig') as f:  # Handle BOM if present
+            # First read the raw CSV to get the first column name
+            first_line = f.readline().strip()
+            f.seek(0)  # Go back to start of file
+            
             reader = csv.DictReader(f)
+            field_names = reader.fieldnames
+            rule_no_field = field_names[0] if field_names else "RuleNo"  # Get the first column name
+            
             for row in reader:
                 # Clean up field names and values
                 cleaned_row = {k.strip(): v.strip() for k, v in row.items() if k}
@@ -202,9 +209,12 @@ def load_rules(csv_path, obj_dict):
                 if action in obj_dict:
                     action = obj_dict[action]["name"]
                 
+                # Get rule number directly from the first column
+                rule_no = cleaned_row.get(rule_no_field, "").strip()
+                
                 # Ensure all required fields exist with both simple and detailed values
                 rule = {
-                    "RuleNo": cleaned_row.get("RuleNo", ""),  # New field for rule number
+                    "RuleNo": rule_no,
                     "Name": cleaned_row.get("Name", ""),
                     "Source_simple": source_simple,
                     "Source_detailed": source_detailed,
@@ -218,8 +228,7 @@ def load_rules(csv_path, obj_dict):
                 rules.append(rule)
                 
                 # Debug output
-                print(f"Processed rule: {rule['Name']}")
-                print(f"  Rule No: {rule['RuleNo']}")
+                print(f"Processed rule {rule_no}: {rule['Name']}")
                 print(f"  Source (simple): {rule['Source_simple']}")
                 print(f"  Source (detailed): {rule['Source_detailed']}")
                 print(f"  Destination (simple): {rule['Destination_simple']}")
