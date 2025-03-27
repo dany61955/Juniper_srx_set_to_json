@@ -146,26 +146,31 @@ def translate_uuid(uuid_list, obj_dict, detailed=False):
                 members_html = []
                 for member in obj["members"]:
                     if obj["member_type"] == "service":
-                        members_html.append(f'<span class="service-value">{member["value"]}</span>')
+                        members_html.append(f'<div class="indent"><span class="service-value">{member["value"]}</span></div>')
                     elif obj["member_type"] in ["host", "network"]:
-                        members_html.append(f'<span class="ip-value">{member["value"]}</span>')
+                        members_html.append(f'<div class="indent"><span class="ip-value">{member["value"]}</span></div>')
                     else:
-                        members_html.append(f'<span class="obj-value">{member["value"]}</span>')
-                result.append(f'<span class="group-name">{group_name}</span>: <span class="group-members">{", ".join(members_html)}</span>')
+                        members_html.append(f'<div class="indent"><span class="obj-value">{member["value"]}</span></div>')
+                result.append(f'<div><span class="group-name">{group_name}</span></div>{"".join(members_html)}')
             else:
                 result.append(f'<span class="group-name">{group_name}</span>')
         else:
             if detailed:
                 if obj["type"] == "service":
-                    result.append(f'<span class="service-name">{obj["name"]}</span>: <span class="service-value">{obj["value"]}</span>')
+                    result.append(f'<div><span class="service-name">{obj["name"]}</span></div><div class="indent"><span class="service-value">{obj["value"]}</span></div>')
                 elif obj["type"] in ["host", "network"]:
-                    result.append(f'<span class="ip-name">{obj["name"]}</span>: <span class="ip-value">{obj["value"]}</span>')
+                    result.append(f'<div><span class="ip-name">{obj["name"]}</span></div><div class="indent"><span class="ip-value">{obj["value"]}</span></div>')
                 else:
-                    result.append(f'<span class="obj-name">{obj["name"]}</span>: <span class="obj-value">{obj["value"]}</span>')
+                    result.append(f'<div><span class="obj-name">{obj["name"]}</span></div><div class="indent"><span class="obj-value">{obj["value"]}</span></div>')
             else:
                 result.append(f'<span class="obj-name">{obj["name"]}</span>')
                 
-    return ", ".join(result) if result else "-"
+    if not result:
+        return "-"
+    elif detailed:
+        return "<div class='cell-content'>" + "".join(result) + "</div>"
+    else:
+        return "<div class='cell-content'>" + ", ".join(result) + "</div>"
 
 # Load CSV rules
 def load_rules(csv_path, obj_dict):
@@ -233,7 +238,7 @@ html_template = """
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; }
         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: top; }
         th { background-color: #f2f2f2; font-weight: bold; }
         tr:nth-child(even) { background-color: #f9f9f9; }
         tr:hover { background-color: #f5f5f5; }
@@ -252,10 +257,15 @@ html_template = """
         .error { color: red; font-weight: bold; }
         
         /* Toggle visibility */
-        .simple { display: inline; }
+        .simple { display: block; }
         .detailed { display: none; }
         .toggle-active .simple { display: none !important; }
-        .toggle-active .detailed { display: inline !important; }
+        .toggle-active .detailed { display: block !important; }
+
+        /* Cell content styling */
+        .cell-content { width: 100%; }
+        .cell-content > div { margin-bottom: 4px; }
+        .indent { padding-left: 20px; margin: 2px 0; }
 
         /* Object type styling */
         .group-name { color: #2196F3; font-weight: bold; }
