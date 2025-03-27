@@ -144,10 +144,15 @@ def load_objects(file_path):
         # Format members for display
         formatted_members = []
         for member in resolved_members:
-            formatted_members.append({
+            member_data = {
                 "name": member["name"],
                 "value": member["value"]
-            })
+            }
+            # Preserve the unresolved type and uid for display
+            if member.get("type") == "unresolved":
+                member_data["type"] = "unresolved"
+                member_data["uid"] = member["uid"]
+            formatted_members.append(member_data)
         
         obj_dict[obj_uid] = {
             "type": "group",
@@ -186,7 +191,8 @@ def translate_uuid(uuid_list, obj_dict, detailed=False):
                 for member in obj["members"]:
                     if member.get("type") == "unresolved":
                         # Handle unresolved members in groups
-                        members_html.append(f'<div class="indent"><span class="untranslated-uid" title="Full UID: {member["uid"]}">(unresolved) {member["uid"]}</span></div>')
+                        uid = member.get("uid", member.get("value"))
+                        members_html.append(f'<div class="indent"><span class="untranslated-uid" title="Full UID: {uid}">(unresolved) {uid}</span></div>')
                     elif obj["member_type"] == "service":
                         members_html.append(f'<div class="indent"><span class="service-value">{member["value"]}</span></div>')
                     elif obj["member_type"] in ["host", "network"]:
