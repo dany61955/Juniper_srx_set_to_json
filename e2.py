@@ -137,7 +137,10 @@ def translate_uuid(uuid_list, obj_dict, detailed=False):
         obj = obj_dict.get(uuid)
         
         if not obj:
-            result.append(f'<span class="obj-name">{uuid}</span>')
+            # Extract last 4 characters of the UID, or use the entire UID if it's shorter
+            uid_suffix = uuid[-4:] if len(uuid) >= 4 else uuid
+            warning_html = f'<span class="untranslated-uid" title="Failed to translate UID: {uuid}">Failed to translate: ...{uid_suffix}</span>'
+            result.append(warning_html)
             continue
             
         if obj["type"] == "group":
@@ -201,6 +204,7 @@ def load_rules(csv_path, obj_dict):
                 
                 # Ensure all required fields exist with both simple and detailed values
                 rule = {
+                    "RuleNo": cleaned_row.get("RuleNo", ""),  # New field for rule number
                     "Name": cleaned_row.get("Name", ""),
                     "Source_simple": source_simple,
                     "Source_detailed": source_detailed,
@@ -215,6 +219,7 @@ def load_rules(csv_path, obj_dict):
                 
                 # Debug output
                 print(f"Processed rule: {rule['Name']}")
+                print(f"  Rule No: {rule['RuleNo']}")
                 print(f"  Source (simple): {rule['Source_simple']}")
                 print(f"  Source (detailed): {rule['Source_detailed']}")
                 print(f"  Destination (simple): {rule['Destination_simple']}")
@@ -282,6 +287,24 @@ html_template = """
         .action[data-action="ACCEPT"] { color: #4CAF50; }
         .action[data-action="DROP"] { color: #F44336; }
         .action[data-action="REJECT"] { color: #FF9800; }
+
+        /* Rule number styling */
+        .rule-no {
+            font-weight: bold;
+            color: #333;
+            font-family: monospace;
+        }
+
+        /* Untranslated UID styling */
+        .untranslated-uid {
+            color: #ff0000;
+            background-color: #fff3f3;
+            padding: 2px 6px;
+            border-radius: 3px;
+            border: 1px solid #ffcdd2;
+            font-style: italic;
+            cursor: help;
+        }
     </style>
 </head>
 <body>
@@ -290,6 +313,7 @@ html_template = """
     {% if rules %}
     <table id="rulesTable">
         <tr>
+            <th>Rule No</th>
             <th>Rule Name</th>
             <th>Action</th>
             <th>Source</th>
@@ -299,6 +323,7 @@ html_template = """
         </tr>
         {% for rule in rules %}
         <tr>
+            <td><span class="rule-no">{{ rule["RuleNo"] }}</span></td>
             <td>{{ rule["Name"] }}</td>
             <td><span class="action" data-action="{{ rule['Action'] }}">{{ rule["Action"] }}</span></td>
             <td>
