@@ -83,6 +83,13 @@ def load_objects(file_path):
             # Find the member object in the original objects list
             member_obj = next((obj for obj in objects if obj.get("uid") == member_uid), None)
             if not member_obj:
+                # Add unresolved member to the list with special handling
+                resolved_members.append({
+                    "type": "unresolved",
+                    "name": member_uid,
+                    "value": member_uid,
+                    "uid": member_uid
+                })
                 continue
                 
             member_obj_type = member_obj.get("type", "").lower()
@@ -109,6 +116,14 @@ def load_objects(file_path):
                 member = obj_dict.get(member_uid)
                 if member:
                     resolved_members.append(member)
+                else:
+                    # Add unresolved member to the list with special handling
+                    resolved_members.append({
+                        "type": "unresolved",
+                        "name": member_uid,
+                        "value": member_uid,
+                        "uid": member_uid
+                    })
         
         return resolved_members
     
@@ -170,7 +185,11 @@ def translate_uuid(uuid_list, obj_dict, detailed=False):
             if detailed:
                 members_html = []
                 for member in obj["members"]:
-                    if obj["member_type"] == "service":
+                    if member.get("type") == "unresolved":
+                        # Handle unresolved members in groups
+                        uid_suffix = member["uid"][-4:] if len(member["uid"]) >= 4 else member["uid"]
+                        members_html.append(f'<div class="indent"><span class="untranslated-uid" title="Full UID: {member["uid"]}">UID: ...{uid_suffix}</span></div>')
+                    elif obj["member_type"] == "service":
                         members_html.append(f'<div class="indent"><span class="service-value">{member["value"]}</span></div>')
                     elif obj["member_type"] in ["host", "network"]:
                         members_html.append(f'<div class="indent"><span class="ip-value">{member["value"]}</span></div>')
