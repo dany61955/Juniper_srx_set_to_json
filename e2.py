@@ -50,8 +50,9 @@ def load_objects(file_path):
         elif obj_type == "service-other":
             protocol = obj.get('protocol', '?')
             obj_dict[obj_uid] = {"type": "service", "name": obj_name, "value": f"{protocol} ({obj_name})"}
-        elif obj_type in ["accept", "drop"]:
-            obj_dict[obj_uid] = {"type": "action", "name": obj_name, "value": obj_type.upper()}
+        elif obj_type == "rulebaseaction":
+            # Handle RulebaseAction type - use the name as is for the action
+            obj_dict[obj_uid] = {"type": "action", "name": obj_name, "value": obj_name}
         elif obj_type == "range":
             start = obj.get('range-start', '?')
             end = obj.get('range-end', '?')
@@ -167,7 +168,7 @@ def translate_uuid(uuid_list, obj_dict, detailed=False):
     return ", ".join(result) if result else "-"
 
 # Load CSV rules
-def load_rules(csv_path, obj_dict, detailed=False):
+def load_rules(csv_path, obj_dict):
     if not os.path.exists(csv_path):
         print(f"Error: {csv_path} not found!")
         return []
@@ -180,22 +181,41 @@ def load_rules(csv_path, obj_dict, detailed=False):
                 # Clean up field names and values
                 cleaned_row = {k.strip(): v.strip() for k, v in row.items() if k}
                 
-                # Ensure all required fields exist with default values
+                # Get both simple and detailed versions
+                source_simple = translate_uuid(cleaned_row.get("Source", "").split(";"), obj_dict, detailed=False)
+                source_detailed = translate_uuid(cleaned_row.get("Source", "").split(";"), obj_dict, detailed=True)
+                dest_simple = translate_uuid(cleaned_row.get("Destination", "").split(";"), obj_dict, detailed=False)
+                dest_detailed = translate_uuid(cleaned_row.get("Destination", "").split(";"), obj_dict, detailed=True)
+                service_simple = translate_uuid(cleaned_row.get("Service", "").split(";"), obj_dict, detailed=False)
+                service_detailed = translate_uuid(cleaned_row.get("Service", "").split(";"), obj_dict, detailed=True)
+                
+                # Get action from obj_dict if it exists, otherwise use the raw value
+                action = cleaned_row.get("Action", "")
+                if action in obj_dict:
+                    action = obj_dict[action]["name"]
+                
+                # Ensure all required fields exist with both simple and detailed values
                 rule = {
                     "Name": cleaned_row.get("Name", ""),
-                    "Source": translate_uuid(cleaned_row.get("Source", "").split(";"), obj_dict, detailed),
-                    "Destination": translate_uuid(cleaned_row.get("Destination", "").split(";"), obj_dict, detailed),
-                    "Service": translate_uuid(cleaned_row.get("Service", "").split(";"), obj_dict, detailed),
-                    "Action": obj_dict.get(cleaned_row.get("Action", ""), cleaned_row.get("Action", "").upper()),
+                    "Source_simple": source_simple,
+                    "Source_detailed": source_detailed,
+                    "Destination_simple": dest_simple,
+                    "Destination_detailed": dest_detailed,
+                    "Service_simple": service_simple,
+                    "Service_detailed": service_detailed,
+                    "Action": action.upper() if action else "",
                     "Comments": cleaned_row.get("Comments", "").replace(",", " ").replace("\n", " ")
                 }
                 rules.append(rule)
                 
                 # Debug output
                 print(f"Processed rule: {rule['Name']}")
-                print(f"  Source: {rule['Source']}")
-                print(f"  Destination: {rule['Destination']}")
-                print(f"  Service: {rule['Service']}")
+                print(f"  Source (simple): {rule['Source_simple']}")
+                print(f"  Source (detailed): {rule['Source_detailed']}")
+                print(f"  Destination (simple): {rule['Destination_simple']}")
+                print(f"  Destination (detailed): {rule['Destination_detailed']}")
+                print(f"  Service (simple): {rule['Service_simple']}")
+                print(f"  Service (detailed): {rule['Service_detailed']}")
                 print(f"  Action: {rule['Action']}")
                 
     except Exception as e:
@@ -248,8 +268,10 @@ html_template = """
         .obj-value { color: #7B1FA2; }
         
         /* Action column styling */
-        .action-accept { color: #4CAF50; font-weight: bold; }
-        .action-drop { color: #F44336; font-weight: bold; }
+        .action { font-weight: bold; }
+        .action[data-action="ACCEPT"] { color: #4CAF50; }
+        .action[data-action="DROP"] { color: #F44336; }
+        .action[data-action="REJECT"] { color: #FF9800; }
     </style>
 </head>
 <body>
@@ -268,18 +290,18 @@ html_template = """
         {% for rule in rules %}
         <tr>
             <td>{{ rule["Name"] }}</td>
-            <td class="action-{{ rule['Action']|lower }}">{{ rule["Action"] }}</td>
+            <td><span class="action" data-action="{{ rule['Action'] }}">{{ rule["Action"] }}</span></td>
             <td>
-                <span class="simple">{{ rule["Source"]|safe }}</span>
-                <span class="detailed">{{ rule["Source"]|safe }}</span>
+                <span class="simple">{{ rule["Source_simple"]|safe }}</span>
+                <span class="detailed">{{ rule["Source_detailed"]|safe }}</span>
             </td>
             <td>
-                <span class="simple">{{ rule["Destination"]|safe }}</span>
-                <span class="detailed">{{ rule["Destination"]|safe }}</span>
+                <span class="simple">{{ rule["Destination_simple"]|safe }}</span>
+                <span class="detailed">{{ rule["Destination_detailed"]|safe }}</span>
             </td>
             <td>
-                <span class="simple">{{ rule["Service"]|safe }}</span>
-                <span class="detailed">{{ rule["Service"]|safe }}</span>
+                <span class="simple">{{ rule["Service_simple"]|safe }}</span>
+                <span class="detailed">{{ rule["Service_detailed"]|safe }}</span>
             </td>
             <td>{{ rule["Comments"] }}</td>
         </tr>
@@ -337,7 +359,7 @@ def main():
         print("Error: Failed to load objects dictionary!")
         return
         
-    rules = load_rules(rules_file, obj_dict, detailed=False)
+    rules = load_rules(rules_file, obj_dict)
     if not rules:
         print("Error: Failed to load rules!")
         return
