@@ -27,10 +27,12 @@ def load_objects(file_path):
     # First pass: Load all non-group objects
     for obj in objects:
         obj_uid = obj.get("uid")
-        if not obj_uid or obj.get("type", "").lower() == "group":
+        obj_type = obj.get("type", "").lower()
+        
+        # Skip groups and service-groups for second pass
+        if not obj_uid or obj_type in ["group", "service-group"]:
             continue
             
-        obj_type = obj.get("type", "").lower()
         obj_name = obj.get("name", obj_uid)
         obj_comment = obj.get("comments", "")
         
@@ -60,7 +62,7 @@ def load_objects(file_path):
         else:
             obj_dict[obj_uid] = {"type": "other", "name": obj_name, "value": obj_name if not obj_comment else f"{obj_name} ({obj_comment})"}
     
-    def resolve_group_members(group_obj, processed=None):
+    def resolve_group_members(group_obj, processed=None, is_service_group=False):
         """Recursively resolve group members, handling nested groups"""
         if processed is None:
             processed = set()
@@ -72,7 +74,10 @@ def load_objects(file_path):
         processed.add(group_uid)
         members = group_obj.get("members", [])
         resolved_members = []
-        member_type = None
+        
+        # Valid member types for each group type
+        valid_network_types = ["host", "network", "range", "group"]
+        valid_service_types = ["service-tcp", "service-udp", "service-icmp", "service-other", "service-group"]
         
         for member_uid in members:
             # Find the member object in the original objects list
@@ -80,49 +85,63 @@ def load_objects(file_path):
             if not member_obj:
                 continue
                 
-            if member_obj.get("type", "").lower() == "group":
+            member_obj_type = member_obj.get("type", "").lower()
+            
+            # Check if member type is valid for the group type
+            if is_service_group and member_obj_type not in valid_service_types:
+                print(f"Warning: Invalid member type '{member_obj_type}' in service-group '{group_obj.get('name')}'")
+                continue
+            elif not is_service_group and member_obj_type not in valid_network_types:
+                print(f"Warning: Invalid member type '{member_obj_type}' in network group '{group_obj.get('name')}'")
+                continue
+            
+            if member_obj_type in ["group", "service-group"]:
                 # Recursively resolve nested group
-                nested_members = resolve_group_members(member_obj, processed)
+                nested_members = resolve_group_members(
+                    member_obj, 
+                    processed,
+                    is_service_group=(member_obj_type == "service-group")
+                )
                 if nested_members:
-                    member_type = member_type or nested_members[0].get("type")
                     resolved_members.extend(nested_members)
             else:
                 # Get the already processed member from obj_dict
                 member = obj_dict.get(member_uid)
                 if member:
-                    member_type = member_type or member["type"]
                     resolved_members.append(member)
         
         return resolved_members
     
-    # Second pass: Process groups with recursive resolution
+    # Second pass: Process groups and service-groups with recursive resolution
     for obj in objects:
-        if obj.get("type", "").lower() == "group":
-            obj_uid = obj.get("uid")
-            if obj_uid in processed_groups:
-                continue
-                
-            obj_name = obj.get("name", obj_uid)
-            resolved_members = resolve_group_members(obj)
+        obj_type = obj.get("type", "").lower()
+        if obj_type not in ["group", "service-group"]:
+            continue
             
-            # Determine group type from members
-            member_type = resolved_members[0]["type"] if resolved_members else "other"
+        obj_uid = obj.get("uid")
+        if obj_uid in processed_groups:
+            continue
             
-            # Format members for display
-            formatted_members = []
-            for member in resolved_members:
-                formatted_members.append({
-                    "name": member["name"],
-                    "value": member["value"]
-                })
-            
-            obj_dict[obj_uid] = {
-                "type": "group",
-                "member_type": member_type,
-                "name": obj_name,
-                "members": formatted_members
-            }
-            processed_groups.add(obj_uid)
+        obj_name = obj.get("name", obj_uid)
+        is_service_group = (obj_type == "service-group")
+        resolved_members = resolve_group_members(obj, is_service_group=is_service_group)
+        
+        # Format members for display
+        formatted_members = []
+        for member in resolved_members:
+            formatted_members.append({
+                "name": member["name"],
+                "value": member["value"]
+            })
+        
+        obj_dict[obj_uid] = {
+            "type": "group",
+            "member_type": "service" if is_service_group else "network",
+            "name": obj_name,
+            "members": formatted_members,
+            "is_service_group": is_service_group  # Add this flag to distinguish group types
+        }
+        processed_groups.add(obj_uid)
     
     return obj_dict
 
