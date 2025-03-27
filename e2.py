@@ -173,11 +173,10 @@ def translate_uuid(uuid_list, obj_dict, detailed=False):
         if not obj:
             # Extract last 4 characters of the UID, or use the entire UID if it's shorter
             uid_suffix = uuid[-4:] if len(uuid) >= 4 else uuid
-            warning_html = f'<div><span class="untranslated-uid" title="Full UID: {uuid}">(unresolved) ...{uid_suffix}</span></div>'
             if detailed:
-                result.append(warning_html)
+                result.append(f'<div><span class="untranslated-uid" title="Full UID: {uuid}">(unresolved) {uuid}</span></div>')
             else:
-                result.append(f'<span class="untranslated-uid" title="Full UID: {uuid}">(unresolved) ...{uid_suffix}</span>')
+                result.append(f'<span class="untranslated-uid" title="Full UID: {uuid}">(unresolved) {uuid}</span>')
             continue
             
         if obj["type"] == "group":
@@ -187,8 +186,7 @@ def translate_uuid(uuid_list, obj_dict, detailed=False):
                 for member in obj["members"]:
                     if member.get("type") == "unresolved":
                         # Handle unresolved members in groups
-                        uid_suffix = member["uid"][-4:] if len(member["uid"]) >= 4 else member["uid"]
-                        members_html.append(f'<div class="indent"><span class="untranslated-uid" title="Full UID: {member["uid"]}">(unresolved) ...{uid_suffix}</span></div>')
+                        members_html.append(f'<div class="indent"><span class="untranslated-uid" title="Full UID: {member["uid"]}">(unresolved) {member["uid"]}</span></div>')
                     elif obj["member_type"] == "service":
                         members_html.append(f'<div class="indent"><span class="service-value">{member["value"]}</span></div>')
                     elif obj["member_type"] in ["host", "network"]:
