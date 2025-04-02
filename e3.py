@@ -456,11 +456,12 @@ def connect_to_manager(mgmt_ip, username, password):
         print(f"SSH connection failed: {str(e)}")
         return None
 
-def login_to_manager(connection):
+def login_to_manager(connection, username, password):
     """Login to Check Point manager via mgmt_cli and return session ID"""
     try:
-        # Execute mgmt_cli login
-        output = connection.send_command('mgmt_cli login --format json', read_timeout=30)
+        # Execute mgmt_cli login with username and password parameters
+        cmd = f'mgmt_cli login user "{username}" password "{password}" > session-auto --format json'
+        output = connection.send_command(cmd, read_timeout=30)
         
         # Parse response to get sid
         session_data = json.loads(output)
@@ -470,7 +471,7 @@ def login_to_manager(connection):
             return None
             
         print("Successfully logged in to manager")
-        return sid
+        return "session-auto"  # Return session-auto instead of actual session ID
     except Exception as e:
         print(f"Error during login: {str(e)}")
         return None
@@ -482,7 +483,7 @@ def logout_from_manager(connection, sid):
     except Exception as e:
         print(f"Error during logout: {str(e)}")
 
-def extract_policy_data(connection, policy_name, sid):
+def extract_policy_data(connection, policy_name):
     """Extract policy data from Check Point manager in batches"""
     try:
         os.makedirs('temp', exist_ok=True)
@@ -490,54 +491,53 @@ def extract_policy_data(connection, policy_name, sid):
         
         # Get first batch of rules to determine total count
         print("Fetching first batch of rules to determine total count...")
-        cmd = f'mgmt_cli show access-rulebase name "{policy_name}" limit {batch_size} offset 0 -s {sid} --format json'
+        cmd = f'mgmt_cli show access-rulebase name "{policy_name}" limit {batch_size} offset 0 -s session-auto --format json'
         output = connection.send_command(cmd, read_timeout=60)
         
-        first_batch = json.loads(output)
-        total_rules = first_batch.get('total', 0)
-        all_rules = first_batch.get('rulebase', [])
-        
+        try:
+            first_batch = json.loads(output)
+            # The response has policy metadata at the top level
+            total_rules = len(first_batch.get('rulebase', []))
+            all_rules = first_batch.get('rulebase', [])
+            
+            print(f"Policy name: {first_batch.get('name')}")
+            print(f"Policy UID: {first_batch.get('uid')}")
+            
+        except json.JSONDecodeError as e:
+            print(f"Failed to parse JSON response: {e}")
+            print(f"Raw output: {output}")
+            return None, None
+            
         # Calculate required iterations for rules
         required_iterations = (total_rules + batch_size - 1) // batch_size
         print(f"Total rules: {total_rules}, Required iterations: {required_iterations}")
         
-        # Fetch remaining rule batches
-        for iteration in range(1, required_iterations):
-            offset = iteration * batch_size
-            print(f"Fetching rules batch {iteration + 1}/{required_iterations} (offset: {offset})")
-            
-            cmd = f'mgmt_cli show access-rulebase name "{policy_name}" limit {batch_size} offset {offset} -s {sid} --format json'
-            output = connection.send_command(cmd, read_timeout=60)
-            
-            batch_data = json.loads(output)
-            batch_rules = batch_data.get('rulebase', [])
-            all_rules.extend(batch_rules)
-        
-        # Convert combined rules to CSV
+        # Convert rules to CSV
         print(f"Converting {len(all_rules)} rules to CSV...")
         rules_csv_path = 'temp/rules.csv'
         with open(rules_csv_path, 'w', newline='') as f:
             writer = csv.writer(f)
             writer.writerow(['RuleNo', 'Name', 'Source', 'Destination', 'Service', 'Action', 'Comments'])
             
-            for idx, rule in enumerate(all_rules, 1):
-                sources = ';'.join([src.get('uid', '') for src in rule.get('source', [])])
-                destinations = ';'.join([dst.get('uid', '') for dst in rule.get('destination', [])])
-                services = ';'.join([svc.get('uid', '') for svc in rule.get('service', [])])
-                
-                writer.writerow([
-                    str(idx),
-                    rule.get('name', ''),
-                    sources,
-                    destinations,
-                    services,
-                    rule.get('action', {}).get('uid', ''),
-                    rule.get('comments', '')
-                ])
+            for rule in all_rules:
+                if rule.get('type') == 'access-rule':
+                    sources = ';'.join([src.get('uid', '') for src in rule.get('source', [])])
+                    destinations = ';'.join([dst.get('uid', '') for dst in rule.get('destination', [])])
+                    services = ';'.join([svc.get('uid', '') for svc in rule.get('service', [])])
+                    
+                    writer.writerow([
+                        str(rule.get('rule-number', '')),
+                        rule.get('name', ''),
+                        sources,
+                        destinations,
+                        services,
+                        rule.get('action', {}).get('uid', ''),
+                        rule.get('comments', '')
+                    ])
         
         # Get first batch of objects to determine total count
         print("\nFetching first batch of objects to determine total count...")
-        cmd = f'mgmt_cli show-objects limit {batch_size} offset 0 -s {sid} --format json'
+        cmd = f'mgmt_cli show-objects limit {batch_size} offset 0 -s session-auto --format json'
         output = connection.send_command(cmd, read_timeout=60)
         
         first_batch = json.loads(output)
@@ -553,7 +553,7 @@ def extract_policy_data(connection, policy_name, sid):
             offset = iteration * batch_size
             print(f"Fetching objects batch {iteration + 1}/{required_iterations} (offset: {offset})")
             
-            cmd = f'mgmt_cli show-objects limit {batch_size} offset {offset} -s {sid} --format json'
+            cmd = f'mgmt_cli show-objects limit {batch_size} offset {offset} -s session-auto --format json'
             output = connection.send_command(cmd, read_timeout=60)
             
             batch_data = json.loads(output)
@@ -588,13 +588,13 @@ def main():
     try:
         # Login to manager
         print("Logging in to Check Point manager...")
-        sid = login_to_manager(connection)
+        sid = login_to_manager(connection, username, password)
         if not sid:
             print("Failed to login. Exiting...")
             return
             
         # Extract policy data
-        rules_csv, objects_json = extract_policy_data(connection, policy_name, sid)
+        rules_csv, objects_json = extract_policy_data(connection, policy_name)
         if not rules_csv or not objects_json:
             print("Failed to extract policy data. Exiting...")
             return
