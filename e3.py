@@ -2,6 +2,7 @@ import csv
 import json
 import os
 import subprocess
+import paramiko
 from jinja2 import Template
 
 # Load objects.json for UUID translation
@@ -11,7 +12,7 @@ def load_objects(file_path):
         return {}
         
     try:
-    with open(file_path, "r") as f:
+        with open(file_path, "r") as f:
             data = json.load(f)
             # Handle both direct list and nested objects format
             objects = data.get("objects", data) if isinstance(data, dict) else data
@@ -234,11 +235,11 @@ def load_rules(csv_path, obj_dict):
             first_line = f.readline().strip()
             f.seek(0)  # Go back to start of file
             
-        reader = csv.DictReader(f)
+            reader = csv.DictReader(f)
             field_names = reader.fieldnames
             rule_no_field = field_names[0] if field_names else "RuleNo"  # Get the first column name
             
-        for row in reader:
+            for row in reader:
                 # Clean up field names and values
                 cleaned_row = {k.strip(): v.strip() for k, v in row.items() if k}
                 
@@ -422,46 +423,60 @@ html_template = """
 # Generate HTML
 def generate_html(rules, output_path):
     try:
-    template = Template(html_template)
-    html_content = template.render(rules=rules)
-    with open(output_path, "w") as f:
-        f.write(html_content)
-        print(f"Interactive report generated: {output_path}")
+        template = Template(html_template)
+        html_content = template.render(rules=rules)
+        with open(output_path, "w") as f:
+            f.write(html_content)
+            print(f"Interactive report generated: {output_path}")
     except Exception as e:
         print(f"Error generating HTML: {str(e)}")
 
-def login_to_manager(mgmt_ip, username=None, password=None):
-    """Login to Check Point manager and return the session ID"""
+def connect_to_manager(mgmt_ip, username, password):
+    """Establish SSH connection to Check Point manager"""
     try:
-        # Build login command
-        cmd = ['mgmt_cli', 'login', '-m', mgmt_ip]
-        if username:
-            cmd.extend(['-u', username])
-        if password:
-            cmd.extend(['-p', password])
-        cmd.append('--format', 'json')
+        # Initialize SSH client
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         
-        # Execute login command
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            print(f"Login failed: {result.stderr}")
+        print(f"Establishing SSH connection to {mgmt_ip}...")
+        ssh.connect(mgmt_ip, username=username, password=password)
+        return ssh
+    except Exception as e:
+        print(f"SSH connection failed: {str(e)}")
+        return None
+
+def login_to_manager(ssh):
+    """Login to Check Point manager via mgmt_cli and return session ID"""
+    try:
+        # Execute mgmt_cli login
+        stdin, stdout, stderr = ssh.exec_command('mgmt_cli login --format json')
+        response = stdout.read().decode()
+        
+        if stderr.read():
+            print(f"Login failed: {stderr.read().decode()}")
             return None
             
         # Parse response to get sid
-        response = json.loads(result.stdout)
-        return response.get('sid')
+        session_data = json.loads(response)
+        sid = session_data.get('sid')
+        if not sid:
+            print("No session ID received")
+            return None
+            
+        print("Successfully logged in to manager")
+        return sid
     except Exception as e:
         print(f"Error during login: {str(e)}")
         return None
 
-def logout_from_manager(mgmt_ip, sid):
+def logout_from_manager(ssh, sid):
     """Logout from Check Point manager"""
     try:
-        subprocess.run(['mgmt_cli', 'logout', '-s', sid, '-m', mgmt_ip], check=True)
+        ssh.exec_command(f'mgmt_cli logout -s {sid}')
     except Exception as e:
         print(f"Error during logout: {str(e)}")
 
-def extract_policy_data(mgmt_ip, policy_name, sid):
+def extract_policy_data(ssh, policy_name, sid):
     """Extract policy data from Check Point manager in batches"""
     try:
         os.makedirs('temp', exist_ok=True)
@@ -469,21 +484,10 @@ def extract_policy_data(mgmt_ip, policy_name, sid):
         
         # Get first batch of rules to determine total count
         print("Fetching first batch of rules to determine total count...")
-        cmd = [
-            'mgmt_cli',
-            'show', 'access-rulebase',
-            'name', policy_name,
-            'limit', str(batch_size),
-            'offset', '0',
-            '-s', sid,
-            '-m', mgmt_ip,
-            '--format', 'json'
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise Exception(f"Failed to fetch first rules batch: {result.stderr}")
+        cmd = f'mgmt_cli show access-rulebase name "{policy_name}" limit {batch_size} offset 0 -s {sid} --format json'
+        stdin, stdout, stderr = ssh.exec_command(cmd)
         
-        first_batch = json.loads(result.stdout)
+        first_batch = json.loads(stdout.read().decode())
         total_rules = first_batch.get('total', 0)
         all_rules = first_batch.get('rulebase', [])
         
@@ -496,21 +500,10 @@ def extract_policy_data(mgmt_ip, policy_name, sid):
             offset = iteration * batch_size
             print(f"Fetching rules batch {iteration + 1}/{required_iterations} (offset: {offset})")
             
-            cmd = [
-                'mgmt_cli',
-                'show', 'access-rulebase',
-                'name', policy_name,
-                'limit', str(batch_size),
-                'offset', str(offset),
-                '-s', sid,
-                '-m', mgmt_ip,
-                '--format', 'json'
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode != 0:
-                raise Exception(f"Failed to fetch rules batch at offset {offset}: {result.stderr}")
+            cmd = f'mgmt_cli show access-rulebase name "{policy_name}" limit {batch_size} offset {offset} -s {sid} --format json'
+            stdin, stdout, stderr = ssh.exec_command(cmd)
             
-            batch_data = json.loads(result.stdout)
+            batch_data = json.loads(stdout.read().decode())
             batch_rules = batch_data.get('rulebase', [])
             all_rules.extend(batch_rules)
         
@@ -538,20 +531,10 @@ def extract_policy_data(mgmt_ip, policy_name, sid):
         
         # Get first batch of objects to determine total count
         print("\nFetching first batch of objects to determine total count...")
-        cmd = [
-            'mgmt_cli',
-            'show-objects',
-            'limit', str(batch_size),
-            'offset', '0',
-            '-s', sid,
-            '-m', mgmt_ip,
-            '--format', 'json'
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise Exception(f"Failed to fetch first objects batch: {result.stderr}")
+        cmd = f'mgmt_cli show-objects limit {batch_size} offset 0 -s {sid} --format json'
+        stdin, stdout, stderr = ssh.exec_command(cmd)
         
-        first_batch = json.loads(result.stdout)
+        first_batch = json.loads(stdout.read().decode())
         total_objects = first_batch.get('total', 0)
         all_objects = first_batch.get('objects', [])
         
@@ -564,20 +547,10 @@ def extract_policy_data(mgmt_ip, policy_name, sid):
             offset = iteration * batch_size
             print(f"Fetching objects batch {iteration + 1}/{required_iterations} (offset: {offset})")
             
-            cmd = [
-                'mgmt_cli',
-                'show-objects',
-                'limit', str(batch_size),
-                'offset', str(offset),
-                '-s', sid,
-                '-m', mgmt_ip,
-                '--format', 'json'
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode != 0:
-                raise Exception(f"Failed to fetch objects batch at offset {offset}: {result.stderr}")
+            cmd = f'mgmt_cli show-objects limit {batch_size} offset {offset} -s {sid} --format json'
+            stdin, stdout, stderr = ssh.exec_command(cmd)
             
-            batch_data = json.loads(result.stdout)
+            batch_data = json.loads(stdout.read().decode())
             batch_objects = batch_data.get('objects', [])
             all_objects.extend(batch_objects)
         
@@ -596,20 +569,26 @@ def extract_policy_data(mgmt_ip, policy_name, sid):
 def main():
     # Get input from user
     mgmt_ip = input("Enter Check Point manager IP: ")
+    username = input("Enter username: ")
+    password = input("Enter password: ")
     policy_name = input("Enter policy name: ")
-    username = input("Enter username (press Enter for default): ") or None
-    password = input("Enter password (press Enter for default): ") or None
     
-    # Login to manager
-    print("Logging in to Check Point manager...")
-    sid = login_to_manager(mgmt_ip, username, password)
-    if not sid:
-        print("Failed to login. Exiting...")
+    # Establish SSH connection
+    ssh = connect_to_manager(mgmt_ip, username, password)
+    if not ssh:
+        print("Failed to establish SSH connection. Exiting...")
         return
         
     try:
+        # Login to manager
+        print("Logging in to Check Point manager...")
+        sid = login_to_manager(ssh)
+        if not sid:
+            print("Failed to login. Exiting...")
+            return
+            
         # Extract policy data
-        rules_csv, objects_json = extract_policy_data(mgmt_ip, policy_name, sid)
+        rules_csv, objects_json = extract_policy_data(ssh, policy_name, sid)
         if not rules_csv or not objects_json:
             print("Failed to extract policy data. Exiting...")
             return
@@ -627,13 +606,18 @@ def main():
             
         # Generate HTML report
         output_html = f"rules_{policy_name.replace(' ', '_')}.html"
-    generate_html(rules, output_html)
+        generate_html(rules, output_html)
         
     finally:
         # Cleanup
-        print("Logging out from Check Point manager...")
-        logout_from_manager(mgmt_ip, sid)
+        if sid:
+            print("Logging out from Check Point manager...")
+            logout_from_manager(ssh, sid)
         
+        if ssh:
+            ssh.close()
+            print("Closed SSH connection")
+            
         # Remove temporary files
         if os.path.exists('temp'):
             import shutil
