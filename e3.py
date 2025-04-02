@@ -275,12 +275,12 @@ def load_rules(csv_path, obj_dict):
                 
                 # Get action and translate it
                 action = cleaned_row.get("Action", "")
-                # First check if it's in the ACTION_UID_MAP
-                if action in ACTION_UID_MAP:
-                    action = ACTION_UID_MAP[action]
-                # Then check if it's in the obj_dict (for rulebaseaction objects)
-                elif action in obj_dict:
+                # First check if it's in the obj_dict (for rulebaseaction objects)
+                if action in obj_dict:
                     action = obj_dict[action]["name"]
+                # Then check if it's in the ACTION_UID_MAP
+                elif action in ACTION_UID_MAP:
+                    action = ACTION_UID_MAP[action]
                 else:
                     # If both translations fail, mark it as unresolved
                     action = f"(unresolved) {action}"
