@@ -439,7 +439,15 @@ def connect_to_manager(mgmt_ip, username, password):
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         
         print(f"Establishing SSH connection to {mgmt_ip}...")
-        ssh.connect(mgmt_ip, username=username, password=password)
+        # Add timeout parameters
+        ssh.connect(
+            mgmt_ip,
+            username=username,
+            password=password,
+            timeout=30,  # Connection timeout
+            banner_timeout=30,  # Banner timeout
+            auth_timeout=30  # Authentication timeout
+        )
         return ssh
     except Exception as e:
         print(f"SSH connection failed: {str(e)}")
@@ -448,12 +456,15 @@ def connect_to_manager(mgmt_ip, username, password):
 def login_to_manager(ssh):
     """Login to Check Point manager via mgmt_cli and return session ID"""
     try:
-        # Execute mgmt_cli login
-        stdin, stdout, stderr = ssh.exec_command('mgmt_cli login --format json')
-        response = stdout.read().decode()
+        # Execute mgmt_cli login with timeout
+        stdin, stdout, stderr = ssh.exec_command('mgmt_cli login --format json', timeout=30)
         
-        if stderr.read():
-            print(f"Login failed: {stderr.read().decode()}")
+        # Read output with timeout
+        response = stdout.read().decode()
+        error = stderr.read().decode()
+        
+        if error:
+            print(f"Login failed: {error}")
             return None
             
         # Parse response to get sid
@@ -485,9 +496,16 @@ def extract_policy_data(ssh, policy_name, sid):
         # Get first batch of rules to determine total count
         print("Fetching first batch of rules to determine total count...")
         cmd = f'mgmt_cli show access-rulebase name "{policy_name}" limit {batch_size} offset 0 -s {sid} --format json'
-        stdin, stdout, stderr = ssh.exec_command(cmd)
+        stdin, stdout, stderr = ssh.exec_command(cmd, timeout=60)  # Increased timeout for data fetch
         
-        first_batch = json.loads(stdout.read().decode())
+        response = stdout.read().decode()
+        error = stderr.read().decode()
+        
+        if error:
+            print(f"Error fetching rules: {error}")
+            return None, None
+            
+        first_batch = json.loads(response)
         total_rules = first_batch.get('total', 0)
         all_rules = first_batch.get('rulebase', [])
         
@@ -501,9 +519,16 @@ def extract_policy_data(ssh, policy_name, sid):
             print(f"Fetching rules batch {iteration + 1}/{required_iterations} (offset: {offset})")
             
             cmd = f'mgmt_cli show access-rulebase name "{policy_name}" limit {batch_size} offset {offset} -s {sid} --format json'
-            stdin, stdout, stderr = ssh.exec_command(cmd)
+            stdin, stdout, stderr = ssh.exec_command(cmd, timeout=60)
             
-            batch_data = json.loads(stdout.read().decode())
+            response = stdout.read().decode()
+            error = stderr.read().decode()
+            
+            if error:
+                print(f"Error fetching rules batch {iteration + 1}: {error}")
+                continue
+                
+            batch_data = json.loads(response)
             batch_rules = batch_data.get('rulebase', [])
             all_rules.extend(batch_rules)
         
@@ -532,9 +557,16 @@ def extract_policy_data(ssh, policy_name, sid):
         # Get first batch of objects to determine total count
         print("\nFetching first batch of objects to determine total count...")
         cmd = f'mgmt_cli show-objects limit {batch_size} offset 0 -s {sid} --format json'
-        stdin, stdout, stderr = ssh.exec_command(cmd)
+        stdin, stdout, stderr = ssh.exec_command(cmd, timeout=60)
         
-        first_batch = json.loads(stdout.read().decode())
+        response = stdout.read().decode()
+        error = stderr.read().decode()
+        
+        if error:
+            print(f"Error fetching objects: {error}")
+            return None, None
+            
+        first_batch = json.loads(response)
         total_objects = first_batch.get('total', 0)
         all_objects = first_batch.get('objects', [])
         
@@ -548,9 +580,16 @@ def extract_policy_data(ssh, policy_name, sid):
             print(f"Fetching objects batch {iteration + 1}/{required_iterations} (offset: {offset})")
             
             cmd = f'mgmt_cli show-objects limit {batch_size} offset {offset} -s {sid} --format json'
-            stdin, stdout, stderr = ssh.exec_command(cmd)
+            stdin, stdout, stderr = ssh.exec_command(cmd, timeout=60)
             
-            batch_data = json.loads(stdout.read().decode())
+            response = stdout.read().decode()
+            error = stderr.read().decode()
+            
+            if error:
+                print(f"Error fetching objects batch {iteration + 1}: {error}")
+                continue
+                
+            batch_data = json.loads(response)
             batch_objects = batch_data.get('objects', [])
             all_objects.extend(batch_objects)
         
