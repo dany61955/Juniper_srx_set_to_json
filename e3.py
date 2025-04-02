@@ -587,14 +587,12 @@ def extract_policy_data(connection, policy_name, write_files=True, objects_file=
                     rule.get('comments', '')
                 ])
         
-        # Write CSV to file if enabled
-        if write_files:
-            rules_csv_path = 'temp/rules.csv'
-            with open(rules_csv_path, 'w', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerows(csv_data)
-        else:
-            rules_csv_path = csv_data
+        # Always write CSV to a temporary file
+        rules_csv_path = 'temp/rules.csv'
+        os.makedirs('temp', exist_ok=True)  # Ensure temp directory exists
+        with open(rules_csv_path, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerows(csv_data)
         
         # Handle objects based on whether a file was provided
         if objects_file:
@@ -637,13 +635,10 @@ def extract_policy_data(connection, policy_name, write_files=True, objects_file=
         # Prepare objects data
         objects_data = {'objects': all_objects}
         
-        # Write objects to file if enabled
-        if write_files:
-            objects_json_path = 'temp/objects.json'
-            with open(objects_json_path, 'w') as f:
-                json.dump(objects_data, f, indent=2)
-        else:
-            objects_json_path = objects_data
+        # Always write objects to a temporary file
+        objects_json_path = 'temp/objects.json'
+        with open(objects_json_path, 'w') as f:
+            json.dump(objects_data, f, indent=2)
             
         return rules_csv_path, objects_json_path
         
