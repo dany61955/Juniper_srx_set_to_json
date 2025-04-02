@@ -13,7 +13,7 @@ def load_objects(file_path):
         return {}
         
     try:
-    with open(file_path, "r") as f:
+        with open(file_path, "r") as f:
             data = json.load(f)
             # Handle both direct list and nested objects format
             objects = data.get("objects", data) if isinstance(data, dict) else data
@@ -236,11 +236,11 @@ def load_rules(csv_path, obj_dict):
             first_line = f.readline().strip()
             f.seek(0)  # Go back to start of file
             
-        reader = csv.DictReader(f)
+            reader = csv.DictReader(f)
             field_names = reader.fieldnames
             rule_no_field = field_names[0] if field_names else "RuleNo"  # Get the first column name
             
-        for row in reader:
+            for row in reader:
                 # Clean up field names and values
                 cleaned_row = {k.strip(): v.strip() for k, v in row.items() if k}
                 
@@ -424,11 +424,11 @@ html_template = """
 # Generate HTML
 def generate_html(rules, output_path):
     try:
-    template = Template(html_template)
-    html_content = template.render(rules=rules)
-    with open(output_path, "w") as f:
-        f.write(html_content)
-            print(f"Interactive report generated: {output_path}")
+        template = Template(html_template)
+        html_content = template.render(rules=rules)
+        with open(output_path, "w") as f:
+            f.write(html_content)
+        print(f"Interactive report generated: {output_path}")
     except Exception as e:
         print(f"Error generating HTML: {str(e)}")
 
@@ -484,7 +484,7 @@ def logout_from_manager(connection, sid):
     except Exception as e:
         print(f"Error during logout: {str(e)}")
 
-def extract_policy_data(connection, policy_name, write_files=True):
+def extract_policy_data(connection, policy_name, write_files=True, objects_file=None):
     """Extract policy data from Check Point manager in batches"""
     try:
         if write_files:
@@ -596,7 +596,12 @@ def extract_policy_data(connection, policy_name, write_files=True):
         else:
             rules_csv_path = csv_data
         
-        # Get first batch of objects to determine total count
+        # Handle objects based on whether a file was provided
+        if objects_file:
+            print(f"Using provided objects file: {objects_file}")
+            return rules_csv_path, objects_file
+            
+        # If no objects file provided, fetch objects from manager
         print("\nFetching first batch of objects to determine total count...")
         cmd = f'mgmt_cli show-objects limit {batch_size} offset 0 -s session-auto --format json'
         output = connection.send_command(cmd, read_timeout=60)
@@ -674,7 +679,7 @@ def main():
             return
             
         # Extract policy data
-        rules_csv, objects_json = extract_policy_data(connection, policy_name, args.write_files)
+        rules_csv, objects_json = extract_policy_data(connection, policy_name, args.write_files, args.objects_file)
         if not rules_csv:
             print("Failed to extract policy data. Exiting...")
             return
