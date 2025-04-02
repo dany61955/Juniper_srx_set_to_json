@@ -556,14 +556,10 @@ def extract_policy_data(connection, policy_name, write_files=True, objects_file=
                 def process_uid_list(uid_list):
                     if not uid_list:
                         return ""
-                    # Check for special ANY cases
-                    processed_uids = []
-                    for uid in uid_list:
-                        if uid in ANY_UID_LIST:
-                            processed_uids.append("ANY")
-                        else:
-                            processed_uids.append(uid)
-                    return ';'.join(processed_uids)
+                    # Check for special ANY cases first
+                    if any(uid in ANY_UID_LIST for uid in uid_list):
+                        return "ANY"
+                    return ';'.join(uid_list)
                 
                 sources = process_uid_list(rule.get('source', []))
                 destinations = process_uid_list(rule.get('destination', []))
@@ -583,7 +579,7 @@ def extract_policy_data(connection, policy_name, write_files=True, objects_file=
                     sources,
                     destinations,
                     services,
-                    action,
+                    action,  # This will now use the translated action value
                     rule.get('comments', '')
                 ])
         
