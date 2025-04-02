@@ -6,6 +6,18 @@ import netmiko
 from jinja2 import Template
 import argparse
 
+# Global UID lists
+ANY_UID_LIST = [
+    "xyz123",  # Replace with actual ANY UID
+    "uvw456"   # Replace with actual ANY UID
+]
+
+ACTION_UID_MAP = {
+    "abc123": "Accept",  # Replace with actual Accept UID
+    "def456": "Drop",    # Replace with actual Drop UID
+    "ghi789": "Client Auth"  # Replace with actual Client Auth UID
+}
+
 # Load objects.json for UUID translation
 def load_objects(file_path):
     if not os.path.exists(file_path):
@@ -13,7 +25,7 @@ def load_objects(file_path):
         return {}
         
     try:
-    with open(file_path, "r") as f:
+        with open(file_path, "r") as f:
             data = json.load(f)
             # Handle both direct list and nested objects format
             objects = data.get("objects", data) if isinstance(data, dict) else data
@@ -245,11 +257,11 @@ def load_rules(csv_path, obj_dict):
             first_line = f.readline().strip()
             f.seek(0)  # Go back to start of file
             
-        reader = csv.DictReader(f)
+            reader = csv.DictReader(f)
             field_names = reader.fieldnames
             rule_no_field = field_names[0] if field_names else "RuleNo"  # Get the first column name
             
-        for row in reader:
+            for row in reader:
                 # Clean up field names and values
                 cleaned_row = {k.strip(): v.strip() for k, v in row.items() if k}
                 
@@ -433,11 +445,11 @@ html_template = """
 # Generate HTML
 def generate_html(rules, output_path):
     try:
-    template = Template(html_template)
-    html_content = template.render(rules=rules)
-    with open(output_path, "w") as f:
-        f.write(html_content)
-        print(f"Interactive report generated: {output_path}")
+        template = Template(html_template)
+        html_content = template.render(rules=rules)
+        with open(output_path, "w") as f:
+            f.write(html_content)
+            print(f"Interactive report generated: {output_path}")
     except Exception as e:
         print(f"Error generating HTML: {str(e)}")
 
@@ -499,19 +511,6 @@ def extract_policy_data(connection, policy_name, write_files=True, objects_file=
         if write_files:
             os.makedirs('temp', exist_ok=True)
         batch_size = 20
-        
-        # Hardcoded UID translations
-        ACTION_UID_MAP = {
-            "abc123": "Accept",  # Replace with actual Accept UID
-            "def456": "Drop",    # Replace with actual Drop UID
-            "ghi789": "Client Auth"  # Replace with actual Client Auth UID
-        }
-        
-        # Special UID cases that should be translated to "ANY"
-        ANY_UID_LIST = [
-            "xyz123",  # Replace with actual ANY UID
-            "uvw456"   # Replace with actual ANY UID
-        ]
         
         # Get first batch of rules to determine total count
         print("Fetching first batch of rules to determine total count...")
@@ -708,7 +707,7 @@ def main():
             
         # Generate HTML report
         output_html = f"rules_{policy_name.replace(' ', '_')}.html"
-    generate_html(rules, output_html)
+        generate_html(rules, output_html)
         
     finally:
         # Cleanup
