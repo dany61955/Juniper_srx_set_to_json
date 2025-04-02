@@ -273,10 +273,17 @@ def load_rules(csv_path, obj_dict):
                 service_simple = translate_uuid(cleaned_row.get("Service", "").split(";"), obj_dict, detailed=False)
                 service_detailed = translate_uuid(cleaned_row.get("Service", "").split(";"), obj_dict, detailed=True)
                 
-                # Get action from obj_dict if it exists, otherwise use the raw value
+                # Get action and translate it
                 action = cleaned_row.get("Action", "")
-                if action in obj_dict:
+                # First check if it's in the ACTION_UID_MAP
+                if action in ACTION_UID_MAP:
+                    action = ACTION_UID_MAP[action]
+                # Then check if it's in the obj_dict (for rulebaseaction objects)
+                elif action in obj_dict:
                     action = obj_dict[action]["name"]
+                else:
+                    # If both translations fail, mark it as unresolved
+                    action = f"(unresolved) {action}"
                 
                 # Get rule number directly from the first column
                 rule_no = cleaned_row.get(rule_no_field, "").strip()
