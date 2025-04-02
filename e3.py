@@ -494,23 +494,45 @@ def extract_policy_data(connection, policy_name):
         cmd = f'mgmt_cli show access-rulebase name "{policy_name}" limit {batch_size} offset 0 -s session-auto --format json'
         output = connection.send_command(cmd, read_timeout=60)
         
-        try:
-            first_batch = json.loads(output)
-            # The response has policy metadata at the top level
-            total_rules = len(first_batch.get('rulebase', []))
-            all_rules = first_batch.get('rulebase', [])
+        # Write raw output to temporary file
+        temp_rules_file = 'temp/raw_rules.json'
+        with open(temp_rules_file, 'w') as f:
+            f.write(output)
             
-            print(f"Policy name: {first_batch.get('name')}")
-            print(f"Policy UID: {first_batch.get('uid')}")
+        # Read and parse the JSON file
+        with open(temp_rules_file, 'r') as f:
+            first_batch = json.load(f)
             
-        except json.JSONDecodeError as e:
-            print(f"Failed to parse JSON response: {e}")
-            print(f"Raw output: {output}")
-            return None, None
-            
+        # The response has policy metadata at the top level
+        total_rules = len(first_batch.get('rulebase', []))
+        all_rules = first_batch.get('rulebase', [])
+        
+        print(f"Policy name: {first_batch.get('name')}")
+        print(f"Policy UID: {first_batch.get('uid')}")
+        
         # Calculate required iterations for rules
         required_iterations = (total_rules + batch_size - 1) // batch_size
         print(f"Total rules: {total_rules}, Required iterations: {required_iterations}")
+        
+        # Fetch remaining rule batches
+        for iteration in range(1, required_iterations):
+            offset = iteration * batch_size
+            print(f"Fetching rules batch {iteration + 1}/{required_iterations} (offset: {offset})")
+            
+            cmd = f'mgmt_cli show access-rulebase name "{policy_name}" limit {batch_size} offset {offset} -s session-auto --format json'
+            output = connection.send_command(cmd, read_timeout=60)
+            
+            # Write batch output to temporary file
+            temp_batch_file = f'temp/rules_batch_{iteration}.json'
+            with open(temp_batch_file, 'w') as f:
+                f.write(output)
+                
+            # Read and parse the batch file
+            with open(temp_batch_file, 'r') as f:
+                batch_data = json.load(f)
+                
+            batch_rules = batch_data.get('rulebase', [])
+            all_rules.extend(batch_rules)
         
         # Convert rules to CSV
         print(f"Converting {len(all_rules)} rules to CSV...")
@@ -540,7 +562,15 @@ def extract_policy_data(connection, policy_name):
         cmd = f'mgmt_cli show-objects limit {batch_size} offset 0 -s session-auto --format json'
         output = connection.send_command(cmd, read_timeout=60)
         
-        first_batch = json.loads(output)
+        # Write raw output to temporary file
+        temp_objects_file = 'temp/raw_objects.json'
+        with open(temp_objects_file, 'w') as f:
+            f.write(output)
+            
+        # Read and parse the JSON file
+        with open(temp_objects_file, 'r') as f:
+            first_batch = json.load(f)
+            
         total_objects = first_batch.get('total', 0)
         all_objects = first_batch.get('objects', [])
         
@@ -556,7 +586,15 @@ def extract_policy_data(connection, policy_name):
             cmd = f'mgmt_cli show-objects limit {batch_size} offset {offset} -s session-auto --format json'
             output = connection.send_command(cmd, read_timeout=60)
             
-            batch_data = json.loads(output)
+            # Write batch output to temporary file
+            temp_batch_file = f'temp/objects_batch_{iteration}.json'
+            with open(temp_batch_file, 'w') as f:
+                f.write(output)
+                
+            # Read and parse the batch file
+            with open(temp_batch_file, 'r') as f:
+                batch_data = json.load(f)
+                
             batch_objects = batch_data.get('objects', [])
             all_objects.extend(batch_objects)
         
