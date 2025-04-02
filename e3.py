@@ -2,7 +2,7 @@ import csv
 import json
 import os
 import subprocess
-import paramiko
+import netmiko
 from jinja2 import Template
 
 # Load objects.json for UUID translation
@@ -432,43 +432,38 @@ def generate_html(rules, output_path):
         print(f"Error generating HTML: {str(e)}")
 
 def connect_to_manager(mgmt_ip, username, password):
-    """Establish SSH connection to Check Point manager"""
+    """Establish SSH connection to Check Point manager using Netmiko"""
     try:
-        # Initialize SSH client
-        ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        # Define device parameters
+        device = {
+            'device_type': 'checkpoint_gaia',  # Netmiko device type for Check Point Gaia
+            'ip': mgmt_ip,
+            'username': username,
+            'password': password,
+            'port': 22,
+            'timeout': 30,
+            'verbose': True,
+            'global_delay_factor': 2,  # Increase delay factor for stability
+            'fast_cli': False  # Disable fast_cli for better stability
+        }
         
         print(f"Establishing SSH connection to {mgmt_ip}...")
-        # Add timeout parameters
-        ssh.connect(
-            mgmt_ip,
-            username=username,
-            password=password,
-            timeout=30,  # Connection timeout
-            banner_timeout=30,  # Banner timeout
-            auth_timeout=30  # Authentication timeout
-        )
-        return ssh
+        # Connect to the device
+        connection = netmiko.ConnectHandler(**device)
+        print("Successfully connected to Check Point manager")
+        return connection
     except Exception as e:
         print(f"SSH connection failed: {str(e)}")
         return None
 
-def login_to_manager(ssh):
+def login_to_manager(connection):
     """Login to Check Point manager via mgmt_cli and return session ID"""
     try:
-        # Execute mgmt_cli login with timeout
-        stdin, stdout, stderr = ssh.exec_command('mgmt_cli login --format json', timeout=30)
+        # Execute mgmt_cli login
+        output = connection.send_command('mgmt_cli login --format json', read_timeout=30)
         
-        # Read output with timeout
-        response = stdout.read().decode()
-        error = stderr.read().decode()
-        
-        if error:
-            print(f"Login failed: {error}")
-            return None
-            
         # Parse response to get sid
-        session_data = json.loads(response)
+        session_data = json.loads(output)
         sid = session_data.get('sid')
         if not sid:
             print("No session ID received")
@@ -480,14 +475,14 @@ def login_to_manager(ssh):
         print(f"Error during login: {str(e)}")
         return None
 
-def logout_from_manager(ssh, sid):
+def logout_from_manager(connection, sid):
     """Logout from Check Point manager"""
     try:
-        ssh.exec_command(f'mgmt_cli logout -s {sid}')
+        connection.send_command(f'mgmt_cli logout -s {sid}')
     except Exception as e:
         print(f"Error during logout: {str(e)}")
 
-def extract_policy_data(ssh, policy_name, sid):
+def extract_policy_data(connection, policy_name, sid):
     """Extract policy data from Check Point manager in batches"""
     try:
         os.makedirs('temp', exist_ok=True)
@@ -496,16 +491,9 @@ def extract_policy_data(ssh, policy_name, sid):
         # Get first batch of rules to determine total count
         print("Fetching first batch of rules to determine total count...")
         cmd = f'mgmt_cli show access-rulebase name "{policy_name}" limit {batch_size} offset 0 -s {sid} --format json'
-        stdin, stdout, stderr = ssh.exec_command(cmd, timeout=60)  # Increased timeout for data fetch
+        output = connection.send_command(cmd, read_timeout=60)
         
-        response = stdout.read().decode()
-        error = stderr.read().decode()
-        
-        if error:
-            print(f"Error fetching rules: {error}")
-            return None, None
-            
-        first_batch = json.loads(response)
+        first_batch = json.loads(output)
         total_rules = first_batch.get('total', 0)
         all_rules = first_batch.get('rulebase', [])
         
@@ -519,16 +507,9 @@ def extract_policy_data(ssh, policy_name, sid):
             print(f"Fetching rules batch {iteration + 1}/{required_iterations} (offset: {offset})")
             
             cmd = f'mgmt_cli show access-rulebase name "{policy_name}" limit {batch_size} offset {offset} -s {sid} --format json'
-            stdin, stdout, stderr = ssh.exec_command(cmd, timeout=60)
+            output = connection.send_command(cmd, read_timeout=60)
             
-            response = stdout.read().decode()
-            error = stderr.read().decode()
-            
-            if error:
-                print(f"Error fetching rules batch {iteration + 1}: {error}")
-                continue
-                
-            batch_data = json.loads(response)
+            batch_data = json.loads(output)
             batch_rules = batch_data.get('rulebase', [])
             all_rules.extend(batch_rules)
         
@@ -557,16 +538,9 @@ def extract_policy_data(ssh, policy_name, sid):
         # Get first batch of objects to determine total count
         print("\nFetching first batch of objects to determine total count...")
         cmd = f'mgmt_cli show-objects limit {batch_size} offset 0 -s {sid} --format json'
-        stdin, stdout, stderr = ssh.exec_command(cmd, timeout=60)
+        output = connection.send_command(cmd, read_timeout=60)
         
-        response = stdout.read().decode()
-        error = stderr.read().decode()
-        
-        if error:
-            print(f"Error fetching objects: {error}")
-            return None, None
-            
-        first_batch = json.loads(response)
+        first_batch = json.loads(output)
         total_objects = first_batch.get('total', 0)
         all_objects = first_batch.get('objects', [])
         
@@ -580,16 +554,9 @@ def extract_policy_data(ssh, policy_name, sid):
             print(f"Fetching objects batch {iteration + 1}/{required_iterations} (offset: {offset})")
             
             cmd = f'mgmt_cli show-objects limit {batch_size} offset {offset} -s {sid} --format json'
-            stdin, stdout, stderr = ssh.exec_command(cmd, timeout=60)
+            output = connection.send_command(cmd, read_timeout=60)
             
-            response = stdout.read().decode()
-            error = stderr.read().decode()
-            
-            if error:
-                print(f"Error fetching objects batch {iteration + 1}: {error}")
-                continue
-                
-            batch_data = json.loads(response)
+            batch_data = json.loads(output)
             batch_objects = batch_data.get('objects', [])
             all_objects.extend(batch_objects)
         
@@ -613,21 +580,21 @@ def main():
     policy_name = input("Enter policy name: ")
     
     # Establish SSH connection
-    ssh = connect_to_manager(mgmt_ip, username, password)
-    if not ssh:
+    connection = connect_to_manager(mgmt_ip, username, password)
+    if not connection:
         print("Failed to establish SSH connection. Exiting...")
         return
         
     try:
         # Login to manager
         print("Logging in to Check Point manager...")
-        sid = login_to_manager(ssh)
+        sid = login_to_manager(connection)
         if not sid:
             print("Failed to login. Exiting...")
             return
             
         # Extract policy data
-        rules_csv, objects_json = extract_policy_data(ssh, policy_name, sid)
+        rules_csv, objects_json = extract_policy_data(connection, policy_name, sid)
         if not rules_csv or not objects_json:
             print("Failed to extract policy data. Exiting...")
             return
@@ -651,10 +618,10 @@ def main():
         # Cleanup
         if sid:
             print("Logging out from Check Point manager...")
-            logout_from_manager(ssh, sid)
+            logout_from_manager(connection, sid)
         
-        if ssh:
-            ssh.close()
+        if connection:
+            connection.disconnect()
             print("Closed SSH connection")
             
         # Remove temporary files
