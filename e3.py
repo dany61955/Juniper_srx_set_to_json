@@ -13,7 +13,7 @@ def load_objects(file_path):
         return {}
         
     try:
-        with open(file_path, "r") as f:
+    with open(file_path, "r") as f:
             data = json.load(f)
             # Handle both direct list and nested objects format
             objects = data.get("objects", data) if isinstance(data, dict) else data
@@ -236,11 +236,11 @@ def load_rules(csv_path, obj_dict):
             first_line = f.readline().strip()
             f.seek(0)  # Go back to start of file
             
-            reader = csv.DictReader(f)
+        reader = csv.DictReader(f)
             field_names = reader.fieldnames
             rule_no_field = field_names[0] if field_names else "RuleNo"  # Get the first column name
             
-            for row in reader:
+        for row in reader:
                 # Clean up field names and values
                 cleaned_row = {k.strip(): v.strip() for k, v in row.items() if k}
                 
@@ -424,10 +424,10 @@ html_template = """
 # Generate HTML
 def generate_html(rules, output_path):
     try:
-        template = Template(html_template)
-        html_content = template.render(rules=rules)
-        with open(output_path, "w") as f:
-            f.write(html_content)
+    template = Template(html_template)
+    html_content = template.render(rules=rules)
+    with open(output_path, "w") as f:
+        f.write(html_content)
             print(f"Interactive report generated: {output_path}")
     except Exception as e:
         print(f"Error generating HTML: {str(e)}")
@@ -491,6 +491,19 @@ def extract_policy_data(connection, policy_name, write_files=True):
             os.makedirs('temp', exist_ok=True)
         batch_size = 20
         
+        # Hardcoded UID translations
+        ACTION_UID_MAP = {
+            "abc123": "Accept",  # Replace with actual Accept UID
+            "def456": "Drop",    # Replace with actual Drop UID
+            "ghi789": "Client Auth"  # Replace with actual Client Auth UID
+        }
+        
+        # Special UID cases that should be translated to "ANY"
+        ANY_UID_LIST = [
+            "xyz123",  # Replace with actual ANY UID
+            "uvw456"   # Replace with actual ANY UID
+        ]
+        
         # Get first batch of rules to determine total count
         print("Fetching first batch of rules to determine total count...")
         cmd = f'mgmt_cli show access-rulebase name "{policy_name}" limit {batch_size} offset 0 -s session-auto --format json'
@@ -539,11 +552,26 @@ def extract_policy_data(connection, policy_name, write_files=True):
         
         for rule in all_rules:
             if rule.get('type') == 'access-rule':
-                # Source, destination, service, and action are all direct UID strings
-                sources = ';'.join(rule.get('source', []))
-                destinations = ';'.join(rule.get('destination', []))
-                services = ';'.join(rule.get('service', []))
-                action = rule.get('action', '')  # Direct UID value
+                # Process source, destination, and service with special case handling
+                def process_uid_list(uid_list):
+                    if not uid_list:
+                        return ""
+                    # Check for special ANY cases
+                    processed_uids = []
+                    for uid in uid_list:
+                        if uid in ANY_UID_LIST:
+                            processed_uids.append("ANY")
+                        else:
+                            processed_uids.append(uid)
+                    return ';'.join(processed_uids)
+                
+                sources = process_uid_list(rule.get('source', []))
+                destinations = process_uid_list(rule.get('destination', []))
+                services = process_uid_list(rule.get('service', []))
+                
+                # Process action with hardcoded translations
+                action_uid = rule.get('action', '')
+                action = ACTION_UID_MAP.get(action_uid, action_uid)  # Use translation if exists, otherwise use original UID
                 
                 # Debug print the rule with proper JSON formatting
                 print("Rule data:")
@@ -555,7 +583,7 @@ def extract_policy_data(connection, policy_name, write_files=True):
                     sources,
                     destinations,
                     services,
-                    action,  # Use the direct UID value
+                    action,
                     rule.get('comments', '')
                 ])
         
@@ -622,6 +650,7 @@ def main():
     # Set up command line arguments
     parser = argparse.ArgumentParser(description='Generate HTML report from Check Point firewall rules')
     parser.add_argument('--write-files', action='store_true', help='Write temporary files to disk')
+    parser.add_argument('--objects-file', type=str, help='Path to existing objects.json file to use instead of fetching from manager')
     args = parser.parse_args()
     
     # Get input from user
@@ -646,12 +675,18 @@ def main():
             
         # Extract policy data
         rules_csv, objects_json = extract_policy_data(connection, policy_name, args.write_files)
-        if not rules_csv or not objects_json:
+        if not rules_csv:
             print("Failed to extract policy data. Exiting...")
             return
             
         # Process the data using existing code
-        obj_dict = load_objects(objects_json)
+        if args.objects_file:
+            print(f"Using existing objects file: {args.objects_file}")
+            obj_dict = load_objects(args.objects_file)
+        else:
+            print("Processing objects from manager response...")
+            obj_dict = load_objects(objects_json)
+            
         if not obj_dict:
             print("Error: Failed to load objects dictionary!")
             return
