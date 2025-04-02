@@ -13,7 +13,7 @@ def load_objects(file_path):
         return {}
         
     try:
-        with open(file_path, "r") as f:
+    with open(file_path, "r") as f:
             data = json.load(f)
             # Handle both direct list and nested objects format
             objects = data.get("objects", data) if isinstance(data, dict) else data
@@ -176,6 +176,15 @@ def translate_uuid(uuid_list, obj_dict, detailed=False):
     result = []
     for uuid in uuid_list:
         uuid = uuid.strip()
+        
+        # Check if this is an ANY UID before attempting translation
+        if uuid in ANY_UID_LIST:
+            if detailed:
+                result.append('<div><span class="obj-value">ANY</span></div>')
+            else:
+                result.append('<span class="obj-value">ANY</span>')
+            continue
+            
         obj = obj_dict.get(uuid)
         
         if not obj:
@@ -236,11 +245,11 @@ def load_rules(csv_path, obj_dict):
             first_line = f.readline().strip()
             f.seek(0)  # Go back to start of file
             
-            reader = csv.DictReader(f)
+        reader = csv.DictReader(f)
             field_names = reader.fieldnames
             rule_no_field = field_names[0] if field_names else "RuleNo"  # Get the first column name
             
-            for row in reader:
+        for row in reader:
                 # Clean up field names and values
                 cleaned_row = {k.strip(): v.strip() for k, v in row.items() if k}
                 
@@ -424,10 +433,10 @@ html_template = """
 # Generate HTML
 def generate_html(rules, output_path):
     try:
-        template = Template(html_template)
-        html_content = template.render(rules=rules)
-        with open(output_path, "w") as f:
-            f.write(html_content)
+    template = Template(html_template)
+    html_content = template.render(rules=rules)
+    with open(output_path, "w") as f:
+        f.write(html_content)
         print(f"Interactive report generated: {output_path}")
     except Exception as e:
         print(f"Error generating HTML: {str(e)}")
@@ -567,7 +576,12 @@ def extract_policy_data(connection, policy_name, write_files=True, objects_file=
                 
                 # Process action with hardcoded translations
                 action_uid = rule.get('action', '')
-                action = ACTION_UID_MAP.get(action_uid, action_uid)  # Use translation if exists, otherwise use original UID
+                # First check if it's a rulebaseaction object
+                if isinstance(action_uid, dict) and action_uid.get('type') == 'rulebaseaction':
+                    action = action_uid.get('name', '')
+                else:
+                    # Use translation map for UID-based actions
+                    action = ACTION_UID_MAP.get(action_uid, action_uid)
                 
                 # Debug print the rule with proper JSON formatting
                 print("Rule data:")
@@ -694,7 +708,7 @@ def main():
             
         # Generate HTML report
         output_html = f"rules_{policy_name.replace(' ', '_')}.html"
-        generate_html(rules, output_html)
+    generate_html(rules, output_html)
         
     finally:
         # Cleanup
