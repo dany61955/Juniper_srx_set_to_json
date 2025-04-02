@@ -5,6 +5,7 @@ import subprocess
 import netmiko
 from jinja2 import Template
 import argparse
+import re
 
 # Global UID lists
 ANY_UID_LIST = [
@@ -454,6 +455,26 @@ def generate_html(rules, output_path):
     try:
         template = Template(html_template)
         html_content = template.render(rules=rules)
+        
+        # Final find and replace for any remaining UIDs
+        for rule in rules:
+            # Replace action UIDs
+            if rule.get("Action", "").startswith("(unresolved)"):
+                action_uid = rule["Action"].replace("(unresolved) ", "")
+                if action_uid in ACTION_UID_MAP:
+                    html_content = html_content.replace(action_uid, ACTION_UID_MAP[action_uid])
+            
+            # Replace source, destination, and service UIDs
+            for field in ["Source_simple", "Source_detailed", "Destination_simple", "Destination_detailed", "Service_simple", "Service_detailed"]:
+                if field in rule:
+                    # Find any UIDs in the format (unresolved) <uid>
+                    pattern = r'\(unresolved\) ([a-zA-Z0-9-]+)'
+                    matches = re.finditer(pattern, rule[field])
+                    for match in matches:
+                        uid = match.group(1)
+                        if uid in ACTION_UID_MAP:
+                            html_content = html_content.replace(f"(unresolved) {uid}", ACTION_UID_MAP[uid])
+        
         with open(output_path, "w") as f:
             f.write(html_content)
             print(f"Interactive report generated: {output_path}")
@@ -617,7 +638,7 @@ def extract_policy_data(connection, policy_name, write_files=True, objects_file=
             
         # If no objects file provided, fetch objects from manager
         print("\nFetching first batch of objects to determine total count...")
-        cmd = f'mgmt_cli show-objects limit {batch_size} offset 0 -s session-auto --format json'
+        cmd = f'mgmt_cli show-objects details-level full limit {batch_size} offset 0 -s session-auto --format json'
         output = connection.send_command(cmd, read_timeout=60)
         
         # Parse the first batch
@@ -634,7 +655,7 @@ def extract_policy_data(connection, policy_name, write_files=True, objects_file=
             offset = iteration * batch_size
             print(f"Fetching objects batch {iteration + 1}/{required_iterations} (offset: {offset})")
             
-            cmd = f'mgmt_cli show-objects limit {batch_size} offset {offset} -s session-auto --format json'
+            cmd = f'mgmt_cli show-objects details-level full limit {batch_size} offset {offset} -s session-auto --format json'
             output = connection.send_command(cmd, read_timeout=60)
             
             # Parse batch data
