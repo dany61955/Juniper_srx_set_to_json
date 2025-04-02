@@ -4,6 +4,7 @@ import os
 import subprocess
 import netmiko
 from jinja2 import Template
+import argparse
 
 # Load objects.json for UUID translation
 def load_objects(file_path):
@@ -483,10 +484,11 @@ def logout_from_manager(connection, sid):
     except Exception as e:
         print(f"Error during logout: {str(e)}")
 
-def extract_policy_data(connection, policy_name):
+def extract_policy_data(connection, policy_name, write_files=True):
     """Extract policy data from Check Point manager in batches"""
     try:
-        os.makedirs('temp', exist_ok=True)
+        if write_files:
+            os.makedirs('temp', exist_ok=True)
         batch_size = 20
         
         # Get first batch of rules to determine total count
@@ -494,25 +496,20 @@ def extract_policy_data(connection, policy_name):
         cmd = f'mgmt_cli show access-rulebase name "{policy_name}" limit {batch_size} offset 0 -s session-auto --format json'
         output = connection.send_command(cmd, read_timeout=60)
         
-        # Write raw output to temporary file
-        temp_rules_file = 'temp/raw_rules.json'
-        with open(temp_rules_file, 'w') as f:
-            f.write(output)
-            
-        # Read and parse the JSON file
-        with open(temp_rules_file, 'r') as f:
-            first_batch = json.load(f)
-            
-        # The response has policy metadata at the top level
-        total_rules = len(first_batch.get('rulebase', []))
+        # Parse the first batch
+        first_batch = json.loads(output)
+        
+        # Get total rules from the response metadata
+        total_rules = first_batch.get('total', 0)
         all_rules = first_batch.get('rulebase', [])
         
         print(f"Policy name: {first_batch.get('name')}")
         print(f"Policy UID: {first_batch.get('uid')}")
+        print(f"Total rules in policy: {total_rules}")
         
         # Calculate required iterations for rules
         required_iterations = (total_rules + batch_size - 1) // batch_size
-        print(f"Total rules: {total_rules}, Required iterations: {required_iterations}")
+        print(f"Required iterations: {required_iterations}")
         
         # Fetch remaining rule batches
         for iteration in range(1, required_iterations):
@@ -522,55 +519,62 @@ def extract_policy_data(connection, policy_name):
             cmd = f'mgmt_cli show access-rulebase name "{policy_name}" limit {batch_size} offset {offset} -s session-auto --format json'
             output = connection.send_command(cmd, read_timeout=60)
             
-            # Write batch output to temporary file
-            temp_batch_file = f'temp/rules_batch_{iteration}.json'
-            with open(temp_batch_file, 'w') as f:
-                f.write(output)
-                
-            # Read and parse the batch file
-            with open(temp_batch_file, 'r') as f:
-                batch_data = json.load(f)
-                
+            # Parse batch data
+            batch_data = json.loads(output)
             batch_rules = batch_data.get('rulebase', [])
             all_rules.extend(batch_rules)
-        
-        # Convert rules to CSV
-        print(f"Converting {len(all_rules)} rules to CSV...")
-        rules_csv_path = 'temp/rules.csv'
-        with open(rules_csv_path, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(['RuleNo', 'Name', 'Source', 'Destination', 'Service', 'Action', 'Comments'])
             
-            for rule in all_rules:
-                if rule.get('type') == 'access-rule':
-                    sources = ';'.join([src.get('uid', '') for src in rule.get('source', [])])
-                    destinations = ';'.join([dst.get('uid', '') for dst in rule.get('destination', [])])
-                    services = ';'.join([svc.get('uid', '') for svc in rule.get('service', [])])
-                    
-                    writer.writerow([
-                        str(rule.get('rule-number', '')),
-                        rule.get('name', ''),
-                        sources,
-                        destinations,
-                        services,
-                        rule.get('action', {}).get('uid', ''),
-                        rule.get('comments', '')
-                    ])
+            # Write to file if enabled
+            if write_files:
+                temp_batch_file = f'temp/rules_batch_{iteration}.json'
+                with open(temp_batch_file, 'w') as f:
+                    json.dump(batch_data, f, indent=2)
+        
+        print(f"Total rules fetched: {len(all_rules)}")
+        
+        # Convert rules to CSV format in memory
+        print(f"Converting {len(all_rules)} rules to CSV format...")
+        csv_data = []
+        csv_data.append(['RuleNo', 'Name', 'Source', 'Destination', 'Service', 'Action', 'Comments'])
+        
+        for rule in all_rules:
+            if rule.get('type') == 'access-rule':
+                # Source, destination, service, and action are all direct UID strings
+                sources = ';'.join(rule.get('source', []))
+                destinations = ';'.join(rule.get('destination', []))
+                services = ';'.join(rule.get('service', []))
+                action = rule.get('action', '')  # Direct UID value
+                
+                # Debug print the rule with proper JSON formatting
+                print("Rule data:")
+                print(json.dumps(rule, indent=2))
+                
+                csv_data.append([
+                    str(rule.get('rule-number', '')),
+                    rule.get('name', ''),
+                    sources,
+                    destinations,
+                    services,
+                    action,  # Use the direct UID value
+                    rule.get('comments', '')
+                ])
+        
+        # Write CSV to file if enabled
+        if write_files:
+            rules_csv_path = 'temp/rules.csv'
+            with open(rules_csv_path, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerows(csv_data)
+        else:
+            rules_csv_path = csv_data
         
         # Get first batch of objects to determine total count
         print("\nFetching first batch of objects to determine total count...")
         cmd = f'mgmt_cli show-objects limit {batch_size} offset 0 -s session-auto --format json'
         output = connection.send_command(cmd, read_timeout=60)
         
-        # Write raw output to temporary file
-        temp_objects_file = 'temp/raw_objects.json'
-        with open(temp_objects_file, 'w') as f:
-            f.write(output)
-            
-        # Read and parse the JSON file
-        with open(temp_objects_file, 'r') as f:
-            first_batch = json.load(f)
-            
+        # Parse the first batch
+        first_batch = json.loads(output)
         total_objects = first_batch.get('total', 0)
         all_objects = first_batch.get('objects', [])
         
@@ -586,23 +590,27 @@ def extract_policy_data(connection, policy_name):
             cmd = f'mgmt_cli show-objects limit {batch_size} offset {offset} -s session-auto --format json'
             output = connection.send_command(cmd, read_timeout=60)
             
-            # Write batch output to temporary file
-            temp_batch_file = f'temp/objects_batch_{iteration}.json'
-            with open(temp_batch_file, 'w') as f:
-                f.write(output)
-                
-            # Read and parse the batch file
-            with open(temp_batch_file, 'r') as f:
-                batch_data = json.load(f)
-                
+            # Parse batch data
+            batch_data = json.loads(output)
             batch_objects = batch_data.get('objects', [])
             all_objects.extend(batch_objects)
+            
+            # Write to file if enabled
+            if write_files:
+                temp_batch_file = f'temp/objects_batch_{iteration}.json'
+                with open(temp_batch_file, 'w') as f:
+                    json.dump(batch_data, f, indent=2)
         
-        # Save combined objects to JSON
-        print(f"Saving {len(all_objects)} objects to JSON...")
-        objects_json_path = 'temp/objects.json'
-        with open(objects_json_path, 'w') as f:
-            json.dump({'objects': all_objects}, f, indent=2)
+        # Prepare objects data
+        objects_data = {'objects': all_objects}
+        
+        # Write objects to file if enabled
+        if write_files:
+            objects_json_path = 'temp/objects.json'
+            with open(objects_json_path, 'w') as f:
+                json.dump(objects_data, f, indent=2)
+        else:
+            objects_json_path = objects_data
             
         return rules_csv_path, objects_json_path
         
@@ -611,6 +619,11 @@ def extract_policy_data(connection, policy_name):
         return None, None
 
 def main():
+    # Set up command line arguments
+    parser = argparse.ArgumentParser(description='Generate HTML report from Check Point firewall rules')
+    parser.add_argument('--write-files', action='store_true', help='Write temporary files to disk')
+    args = parser.parse_args()
+    
     # Get input from user
     mgmt_ip = input("Enter Check Point manager IP: ")
     username = input("Enter username: ")
@@ -632,7 +645,7 @@ def main():
             return
             
         # Extract policy data
-        rules_csv, objects_json = extract_policy_data(connection, policy_name)
+        rules_csv, objects_json = extract_policy_data(connection, policy_name, args.write_files)
         if not rules_csv or not objects_json:
             print("Failed to extract policy data. Exiting...")
             return
@@ -662,8 +675,8 @@ def main():
             connection.disconnect()
             print("Closed SSH connection")
             
-        # Remove temporary files
-        if os.path.exists('temp'):
+        # Remove temporary files only if they were created
+        if args.write_files and os.path.exists('temp'):
             import shutil
             shutil.rmtree('temp')
 
