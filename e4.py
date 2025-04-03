@@ -1,50 +1,49 @@
-def extract_and_print_rules(data, level=0):
-    rules = []
-    indent = "  " * level
-    
-    if 'rulebase' in data:
-        rulebase = data['rulebase']
-        
-        if isinstance(rulebase, list):
-            for entry in rulebase:
-                # Check for direct rules
-                if 'rule-number' in entry:
-                    rule = {
-                        'rule_number': entry.get('rule-number'),
-                        'source': entry.get('source', []),
-                        'destination': entry.get('destination', []),
-                        'action': entry.get('action', ''),
-                        'name': entry.get('name', '')
-                    }
-                    rules.append(rule)
-                    print(f"\nRule No: {rule['rule_number']}")
-                    print(f"Name: {rule['name']}")
-                    print(f"Source: {', '.join(rule['source'])}")
-                    print(f"Destination: {', '.join(rule['destination'])}")
-                    print(f"Action: {rule['action']}")
-                    print("-" * 50)  # Separator line
-                
-                # Check for nested rulebases
-                elif 'rulebase' in entry:
-                    print(f"{indent}Processing section: {entry.get('name', 'Unnamed Section')}")
-                    nested_rules = extract_and_print_rules(entry, level + 1)
-                    rules.extend(nested_rules)
-    
-    return rules
+import json
 
-# Example usage:
-def process_checkpoint_file(json_file_path):
+def print_rules_simple(json_file_path):
     try:
+        # Load the JSON file
         with open(json_file_path, 'r') as f:
-            full_data = json.load(f)
+            data = json.load(f)
+        
+        print("Processing rules...")
+        print("=" * 50)
+        
+        # Function to extract rules recursively
+        def extract_rules(data):
+            rules = []
             
-        print("Starting to process rules...")
-        print("=" * 50)  # Header separator
+            if 'rulebase' in data:
+                rulebase = data['rulebase']
+                
+                if isinstance(rulebase, list):
+                    for entry in rulebase:
+                        # If it's a direct rule
+                        if 'rule-number' in entry:
+                            rules.append(entry)
+                        # If it has a nested rulebase
+                        elif 'rulebase' in entry:
+                            nested_rules = extract_rules(entry)
+                            rules.extend(nested_rules)
+            
+            return rules
         
-        all_rules = extract_and_print_rules(full_data)
+        # Get all rules
+        all_rules = extract_rules(data)
         
-        print("\nSummary:")
-        print(f"Total rules processed: {len(all_rules)}")
+        # Sort rules by rule number
+        all_rules.sort(key=lambda x: int(x.get('rule-number', 0)))
+        
+        # Print rules in order
+        for rule in all_rules:
+            print(f"\nRule No: {rule.get('rule-number', 'N/A')}")
+            print(f"Name: {rule.get('name', 'N/A')}")
+            print(f"Source: {', '.join(rule.get('source', []))}")
+            print(f"Destination: {', '.join(rule.get('destination', []))}")
+            print(f"Action: {rule.get('action', 'N/A')}")
+            print("-" * 50)
+        
+        print(f"\nTotal rules processed: {len(all_rules)}")
         
     except FileNotFoundError:
         print(f"Error: File {json_file_path} not found")
@@ -53,5 +52,7 @@ def process_checkpoint_file(json_file_path):
     except Exception as e:
         print(f"Error processing file: {str(e)}")
 
-# To use it:
-process_checkpoint_file('your_checkpoint_file.json')
+# Example usage:
+if __name__ == "__main__":
+    json_file_path = "your_rules_file.json"  # Replace with your file path
+    print_rules_simple(json_file_path)
