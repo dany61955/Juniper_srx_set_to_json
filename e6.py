@@ -254,16 +254,12 @@ def load_rules(csv_path, obj_dict):
     rules = []
     try:
         with open(csv_path, "r", encoding='utf-8-sig') as f:  # Handle BOM if present
-            # Read the entire file content first
-            content = f.read()
-            f.seek(0)  # Reset file pointer to beginning
-            
             # Create CSV reader
-        reader = csv.DictReader(f)
+            reader = csv.DictReader(f)
             field_names = reader.fieldnames
             rule_no_field = field_names[0] if field_names else "RuleNo"  # Get the first column name
             
-        for row in reader:
+            for row in reader:
                 # Clean up field names and values
                 cleaned_row = {k.strip(): v.strip() for k, v in row.items() if k}
                 
@@ -591,17 +587,13 @@ def extract_policy_data(connection, policy_name, write_files=True, objects_file=
                     # Use translation map for UID-based actions
                     action = ACTION_UID_MAP.get(action_uid, action_uid)
                 
-                # Debug print the rule with proper JSON formatting
-                print("Rule data:")
-                print(json.dumps(rule, indent=2))
-                
                 csv_data.append([
                     str(rule.get('rule-number', '')),
                     rule.get('name', ''),
                     sources,
                     destinations,
                     services,
-                    action,  # This will now use the translated action value
+                    action,
                     rule.get('comments', '')
                 ])
         
@@ -657,12 +649,6 @@ def extract_policy_data(connection, policy_name, write_files=True, objects_file=
         objects_json_path = 'temp/objects.json'
         with open(objects_json_path, 'w') as f:
             json.dump(objects_data, f, indent=2)
-            
-        # Save complete rules data to all_rules.json
-        rules_data = {'rules': all_rules}
-        rules_json_path = 'temp/all_rules.json'
-        with open(rules_json_path, 'w') as f:
-            json.dump(rules_data, f, indent=2)
             
         return rules_csv_path, objects_json_path
         
@@ -805,6 +791,11 @@ def main():
                 
             if not obj_dict:
                 print("Error: Failed to load objects dictionary!")
+                return
+                
+            # Ensure the CSV file exists before trying to read it
+            if not os.path.exists(rules_csv_path):
+                print(f"Error: {rules_csv_path} not found after creation!")
                 return
                 
             rules = load_rules(rules_csv_path, obj_dict)
