@@ -547,12 +547,11 @@ def extract_policy_data(connection, policy_name, write_files=True, objects_file=
         
         # Get total rules from the response metadata
         total_rules = first_batch.get('total', 0)
-        all_rules = first_batch.get('rulebase', [])
+        rulebase = first_batch.get('rulebase', [])
         
         print(f"Policy name: {first_batch.get('name')}")
         print(f"Policy UID: {first_batch.get('uid')}")
         print(f"Total rules in policy: {total_rules}")
-        print(f"Debug: Number of rules in first batch: {len(all_rules)}")
         
         # Calculate required iterations for rules
         required_iterations = (total_rules + batch_size - 1) // batch_size
@@ -568,9 +567,8 @@ def extract_policy_data(connection, policy_name, write_files=True, objects_file=
             
             # Parse batch data
             batch_data = json.loads(output)
-            batch_rules = batch_data.get('rulebase', [])
-            print(f"Debug: Number of rules in batch {iteration + 1}: {len(batch_rules)}")
-            all_rules.extend(batch_rules)
+            batch_rulebase = batch_data.get('rulebase', [])
+            rulebase.extend(batch_rulebase)
             
             # Write to file if enabled
             if write_files:
@@ -581,56 +579,65 @@ def extract_policy_data(connection, policy_name, write_files=True, objects_file=
             # Add a small delay between batches
             time.sleep(1)  # 1 second delay
         
-        print(f"Total rules fetched: {len(all_rules)}")
+        print(f"Total sections fetched: {len(rulebase)}")
         
         # Convert rules to CSV format in memory
-        print(f"Converting {len(all_rules)} rules to CSV format...")
+        print(f"Converting rules to CSV format...")
         csv_data = []
         csv_data.append(['RuleNo', 'Name', 'Source', 'Destination', 'Service', 'Action', 'Comments'])
         
         rule_count = 0
-        for rule in all_rules:
-            print(f"\nDebug: Processing rule {rule_count + 1}")
-            print(f"Debug: Rule data: {json.dumps(rule, indent=2)}")
-            
-            if rule.get('type') == 'access-rule':
-                # Process source, destination, and service with special case handling
-                def process_uid_list(uid_list):
-                    if not uid_list:
-                        return ""
-                    # Check for special ANY cases first
-                    if any(uid in ANY_UID_LIST for uid in uid_list):
-                        return "ANY"
-                    return ';'.join(uid_list)
-                
-                sources = process_uid_list(rule.get('source', []))
-                destinations = process_uid_list(rule.get('destination', []))
-                services = process_uid_list(rule.get('service', []))
-                
-                # Process action with hardcoded translations
-                action_uid = rule.get('action', '')
-                print(f"Debug: Action UID: {action_uid}")
-                # First check if it's a rulebaseaction object
-                if isinstance(action_uid, dict) and action_uid.get('type') == 'rulebaseaction':
-                    action = action_uid.get('name', '')
+        def process_rulebase_items(items):
+            nonlocal rule_count
+            for item in items:
+                if item.get('type') == 'access-section':
+                    print(f"Debug: Processing section: {item.get('name')}")
+                    # Recursively process rules in this section
+                    process_rulebase_items(item.get('rulebase', []))
+                elif item.get('type') == 'access-rule':
+                    rule_count += 1
+                    print(f"\nDebug: Processing rule {rule_count}")
+                    print(f"Debug: Rule data: {json.dumps(item, indent=2)}")
+                    
+                    # Process source, destination, and service with special case handling
+                    def process_uid_list(uid_list):
+                        if not uid_list:
+                            return ""
+                        # Check for special ANY cases first
+                        if any(uid in ANY_UID_LIST for uid in uid_list):
+                            return "ANY"
+                        return ';'.join(uid_list)
+                    
+                    sources = process_uid_list(item.get('source', []))
+                    destinations = process_uid_list(item.get('destination', []))
+                    services = process_uid_list(item.get('service', []))
+                    
+                    # Process action with hardcoded translations
+                    action_uid = item.get('action', '')
+                    print(f"Debug: Action UID: {action_uid}")
+                    # First check if it's a rulebaseaction object
+                    if isinstance(action_uid, dict) and action_uid.get('type') == 'rulebaseaction':
+                        action = action_uid.get('name', '')
+                    else:
+                        # Use translation map for UID-based actions
+                        action = ACTION_UID_MAP.get(action_uid, action_uid)
+                    print(f"Debug: Translated action: {action}")
+                    
+                    csv_data.append([
+                        str(item.get('rule-number', '')),
+                        item.get('name', ''),
+                        sources,
+                        destinations,
+                        services,
+                        action,
+                        item.get('comments', '')
+                    ])
+                    print(f"Debug: Successfully added rule {rule_count} to CSV data")
                 else:
-                    # Use translation map for UID-based actions
-                    action = ACTION_UID_MAP.get(action_uid, action_uid)
-                print(f"Debug: Translated action: {action}")
-                
-                csv_data.append([
-                    str(rule.get('rule-number', '')),
-                    rule.get('name', ''),
-                    sources,
-                    destinations,
-                    services,
-                    action,
-                    rule.get('comments', '')
-                ])
-                rule_count += 1
-                print(f"Debug: Successfully added rule {rule_count} to CSV data")
-            else:
-                print(f"Debug: Skipping non-access-rule object of type: {rule.get('type')}")
+                    print(f"Debug: Skipping non-access-rule object of type: {item.get('type')}")
+        
+        # Process all rules recursively
+        process_rulebase_items(rulebase)
         
         print(f"Debug: Total rules converted to CSV: {rule_count}")
         
@@ -781,48 +788,69 @@ def main():
             
             # Extract the rules array from the JSON structure
             if isinstance(rules_data, dict) and 'rules' in rules_data:
-                all_rules = rules_data['rules']
+                rulebase = rules_data['rules']
             else:
-                all_rules = rules_data  # If it's already an array
+                rulebase = rules_data  # If it's already an array
             
             # Convert rules to CSV format
-            print(f"Converting {len(all_rules)} rules to CSV format...")
+            print(f"Converting rules to CSV format...")
             csv_data = []
             csv_data.append(['RuleNo', 'Name', 'Source', 'Destination', 'Service', 'Action', 'Comments'])
             
-            for rule in all_rules:
-                if isinstance(rule, dict) and rule.get('type') == 'access-rule':
-                    # Process source, destination, and service with special case handling
-                    def process_uid_list(uid_list):
-                        if not uid_list:
-                            return ""
-                        # Check for special ANY cases first
-                        if any(uid in ANY_UID_LIST for uid in uid_list):
-                            return "ANY"
-                        return ';'.join(uid_list)
-                    
-                    sources = process_uid_list(rule.get('source', []))
-                    destinations = process_uid_list(rule.get('destination', []))
-                    services = process_uid_list(rule.get('service', []))
-                    
-                    # Process action with hardcoded translations
-                    action_uid = rule.get('action', '')
-                    # First check if it's a rulebaseaction object
-                    if isinstance(action_uid, dict) and action_uid.get('type') == 'rulebaseaction':
-                        action = action_uid.get('name', '')
+            rule_count = 0
+            def process_rulebase_items(items):
+                nonlocal rule_count
+                for item in items:
+                    if item.get('type') == 'access-section':
+                        print(f"Debug: Processing section: {item.get('name')}")
+                        # Recursively process rules in this section
+                        process_rulebase_items(item.get('rulebase', []))
+                    elif item.get('type') == 'access-rule':
+                        rule_count += 1
+                        print(f"\nDebug: Processing rule {rule_count}")
+                        print(f"Debug: Rule data: {json.dumps(item, indent=2)}")
+                        
+                        # Process source, destination, and service with special case handling
+                        def process_uid_list(uid_list):
+                            if not uid_list:
+                                return ""
+                            # Check for special ANY cases first
+                            if any(uid in ANY_UID_LIST for uid in uid_list):
+                                return "ANY"
+                            return ';'.join(uid_list)
+                        
+                        sources = process_uid_list(item.get('source', []))
+                        destinations = process_uid_list(item.get('destination', []))
+                        services = process_uid_list(item.get('service', []))
+                        
+                        # Process action with hardcoded translations
+                        action_uid = item.get('action', '')
+                        print(f"Debug: Action UID: {action_uid}")
+                        # First check if it's a rulebaseaction object
+                        if isinstance(action_uid, dict) and action_uid.get('type') == 'rulebaseaction':
+                            action = action_uid.get('name', '')
+                        else:
+                            # Use translation map for UID-based actions
+                            action = ACTION_UID_MAP.get(action_uid, action_uid)
+                        print(f"Debug: Translated action: {action}")
+                        
+                        csv_data.append([
+                            str(item.get('rule-number', '')),
+                            item.get('name', ''),
+                            sources,
+                            destinations,
+                            services,
+                            action,
+                            item.get('comments', '')
+                        ])
+                        print(f"Debug: Successfully added rule {rule_count} to CSV data")
                     else:
-                        # Use translation map for UID-based actions
-                        action = ACTION_UID_MAP.get(action_uid, action_uid)
-                    
-                    csv_data.append([
-                        str(rule.get('rule-number', '')),
-                        rule.get('name', ''),
-                        sources,
-                        destinations,
-                        services,
-                        action,
-                        rule.get('comments', '')
-                    ])
+                        print(f"Debug: Skipping non-access-rule object of type: {item.get('type')}")
+            
+            # Process all rules recursively
+            process_rulebase_items(rulebase)
+            
+            print(f"Debug: Total rules converted to CSV: {rule_count}")
             
             # Write CSV to a temporary file
             rules_csv_path = 'temp/rules.csv'
@@ -830,6 +858,7 @@ def main():
             with open(rules_csv_path, 'w', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerows(csv_data)
+            print(f"Debug: Wrote {len(csv_data)} rows to {rules_csv_path}")
             
             # Process objects
             if args.objects_file:
@@ -856,10 +885,13 @@ def main():
             # Generate HTML report with timestamp
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             output_html = f"rules_from_file_{timestamp}.html"
-    generate_html(rules, output_html)
+            generate_html(rules, output_html)
             
         except Exception as e:
             print(f"Error processing rules file: {str(e)}")
+            import traceback
+            print("Full error traceback:")
+            print(traceback.format_exc())
             return
 
 if __name__ == "__main__":
