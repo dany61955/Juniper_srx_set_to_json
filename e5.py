@@ -25,7 +25,7 @@ def load_objects(file_path):
         return {}
         
     try:
-    with open(file_path, "r") as f:
+        with open(file_path, "r") as f:
             data = json.load(f)
             # Handle both direct list and nested objects format
             objects = data.get("objects", data) if isinstance(data, dict) else data
