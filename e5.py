@@ -656,6 +656,12 @@ def extract_policy_data(connection, policy_name, write_files=True, objects_file=
         with open(objects_json_path, 'w') as f:
             json.dump(objects_data, f, indent=2)
             
+        # Save complete rules data to all_rules.json
+        rules_data = {'rules': all_rules}
+        rules_json_path = 'temp/all_rules.json'
+        with open(rules_json_path, 'w') as f:
+            json.dump(rules_data, f, indent=2)
+            
         return rules_csv_path, objects_json_path
         
     except Exception as e:
