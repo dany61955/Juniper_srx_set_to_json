@@ -6,6 +6,7 @@ import netmiko
 from jinja2 import Template
 import argparse
 import datetime
+import time
 
 # Global UID lists
 ANY_UID_LIST = [
@@ -555,6 +556,9 @@ def extract_policy_data(connection, policy_name, write_files=True, objects_file=
                 temp_batch_file = f'temp/rules_batch_{iteration}.json'
                 with open(temp_batch_file, 'w') as f:
                     json.dump(batch_data, f, indent=2)
+            
+            # Add a small delay between batches
+            time.sleep(1)  # 1 second delay
         
         print(f"Total rules fetched: {len(all_rules)}")
         
@@ -641,6 +645,9 @@ def extract_policy_data(connection, policy_name, write_files=True, objects_file=
                 temp_batch_file = f'temp/objects_batch_{iteration}.json'
                 with open(temp_batch_file, 'w') as f:
                     json.dump(batch_data, f, indent=2)
+            
+            # Add a small delay between batches
+            time.sleep(1)  # 1 second delay
         
         # Prepare objects data
         objects_data = {'objects': all_objects}
