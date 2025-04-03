@@ -26,16 +26,18 @@ def run_commands_from_file(input_file, log_file, interval_minutes=1):
         
         # Read and execute commands
         with open(input_file, 'r') as f:
-            commands = f.readlines()
+            commands = [cmd.strip() for cmd in f.readlines() if cmd.strip() and not cmd.startswith('#')]
             
+        total_commands = len(commands)
+        print(f"\nTotal commands to execute: {total_commands}")
+        
         for i, cmd in enumerate(commands, 1):
-            cmd = cmd.strip()
-            if not cmd or cmd.startswith('#'):
-                continue
+            print(f"\nNow executing {i}/{total_commands}")
+            print(f"Command: {cmd}")
                 
             # Log command start
             log.write(f"\n{'='*80}\n")
-            log.write(f"Executing command {i}/{len(commands)}: {cmd}\n")
+            log.write(f"Executing command {i}/{total_commands}: {cmd}\n")
             log.write(f"Start time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             log.write(f"{'='*80}\n\n")
             
@@ -54,14 +56,18 @@ def run_commands_from_file(input_file, log_file, interval_minutes=1):
                 if result.stderr:
                     log.write(f"Command stderr:\n{result.stderr}\n")
                     
+                print(f"Command {i} completed successfully")
+                    
             except subprocess.CalledProcessError as e:
                 # Log error
                 log.write(f"Error executing command: {e}\n")
                 log.write(f"Error output:\n{e.stderr}\n")
+                print(f"Error executing command {i}: {e}")
                 
             except Exception as e:
                 # Log unexpected errors
                 log.write(f"Unexpected error: {str(e)}\n")
+                print(f"Unexpected error in command {i}: {str(e)}")
                 
             # Log command end
             log.write(f"\n{'='*80}\n")
@@ -69,7 +75,8 @@ def run_commands_from_file(input_file, log_file, interval_minutes=1):
             log.write(f"{'='*80}\n\n")
             
             # Wait for specified interval (except after last command)
-            if i < len(commands):
+            if i < total_commands:
+                print(f"Waiting {interval_minutes} minute(s) before next command...")
                 log.write(f"Waiting {interval_minutes} minute(s) before next command...\n")
                 time.sleep(interval_minutes * 60)
                 
@@ -77,6 +84,7 @@ def run_commands_from_file(input_file, log_file, interval_minutes=1):
         log.write(f"\n{'='*80}\n")
         log.write(f"All commands completed at: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
         log.write(f"{'='*80}\n\n")
+        print("\nAll commands completed successfully!")
 
 if __name__ == "__main__":
     # Configuration
