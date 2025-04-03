@@ -733,7 +733,13 @@ def main():
         try:
             # Read rules from JSON file
             with open(args.rules_file, 'r') as f:
-                all_rules = json.load(f)
+                rules_data = json.load(f)
+            
+            # Extract the rules array from the JSON structure
+            if isinstance(rules_data, dict) and 'rules' in rules_data:
+                all_rules = rules_data['rules']
+            else:
+                all_rules = rules_data  # If it's already an array
             
             # Convert rules to CSV format
             print(f"Converting {len(all_rules)} rules to CSV format...")
@@ -741,7 +747,7 @@ def main():
             csv_data.append(['RuleNo', 'Name', 'Source', 'Destination', 'Service', 'Action', 'Comments'])
             
             for rule in all_rules:
-                if rule.get('type') == 'access-rule':
+                if isinstance(rule, dict) and rule.get('type') == 'access-rule':
                     # Process source, destination, and service with special case handling
                     def process_uid_list(uid_list):
                         if not uid_list:
