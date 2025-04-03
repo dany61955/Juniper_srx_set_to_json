@@ -253,15 +253,16 @@ def load_rules(csv_path, obj_dict):
     rules = []
     try:
         with open(csv_path, "r", encoding='utf-8-sig') as f:  # Handle BOM if present
-            # First read the raw CSV to get the first column name
-            first_line = f.readline().strip()
-            f.seek(0)  # Go back to start of file
+            # Read the entire file content first
+            content = f.read()
+            f.seek(0)  # Reset file pointer to beginning
             
-        reader = csv.DictReader(f)
+            # Create CSV reader
+            reader = csv.DictReader(f)
             field_names = reader.fieldnames
             rule_no_field = field_names[0] if field_names else "RuleNo"  # Get the first column name
             
-        for row in reader:
+            for row in reader:
                 # Clean up field names and values
                 cleaned_row = {k.strip(): v.strip() for k, v in row.items() if k}
                 
@@ -452,11 +453,11 @@ html_template = """
 # Generate HTML
 def generate_html(rules, output_path):
     try:
-    template = Template(html_template)
-    html_content = template.render(rules=rules)
-    with open(output_path, "w") as f:
-        f.write(html_content)
-            print(f"Interactive report generated: {output_path}")
+        template = Template(html_template)
+        html_content = template.render(rules=rules)
+        with open(output_path, "w") as f:
+            f.write(html_content)
+        print(f"Interactive report generated: {output_path}")
     except Exception as e:
         print(f"Error generating HTML: {str(e)}")
 
@@ -744,7 +745,9 @@ def main():
         try:
             # Read rules from JSON file
             with open(args.rules_file, 'r') as f:
-                all_rules = json.load(f)
+                rules_data = json.load(f)
+                # Extract rules from the 'rules' key
+                all_rules = rules_data.get('rules', [])
             
             # Convert rules to CSV format
             print(f"Converting {len(all_rules)} rules to CSV format...")
@@ -752,7 +755,7 @@ def main():
             csv_data.append(['RuleNo', 'Name', 'Source', 'Destination', 'Service', 'Action', 'Comments'])
             
             for rule in all_rules:
-                if rule.get('type') == 'access-rule':
+                if isinstance(rule, dict) and rule.get('type') == 'access-rule':
                     # Process source, destination, and service with special case handling
                     def process_uid_list(uid_list):
                         if not uid_list:
