@@ -27,7 +27,7 @@ def load_objects(file_path):
         return {}
         
     try:
-    with open(file_path, "r") as f:
+        with open(file_path, "r") as f:
             data = json.load(f)
             # Handle both direct list and nested objects format
             objects = data.get("objects", data) if isinstance(data, dict) else data
@@ -269,19 +269,13 @@ def load_rules(csv_path, obj_dict):
     try:
         print(f"\nDebug: Attempting to read CSV file: {csv_path}")
         with open(csv_path, "r", encoding='utf-8-sig') as f:  # Handle BOM if present
-            # Create CSV reader
-        reader = csv.DictReader(f)
+            reader = csv.DictReader(f)
             field_names = reader.fieldnames
             print(f"Debug: CSV field names: {field_names}")
-            rule_no_field = field_names[0] if field_names else "RuleNo"  # Get the first column name
             
-            row_count = 0
-        for row in reader:
-                row_count += 1
-                print(f"\nDebug: Processing row {row_count}")
+            for row in reader:
                 # Clean up field names and values
                 cleaned_row = {k.strip(): v.strip() for k, v in row.items() if k}
-                print(f"Debug: Cleaned row data: {cleaned_row}")
                 
                 # Get both simple and detailed versions
                 source_simple = translate_uuid(cleaned_row.get("Source", "").split(";"), obj_dict, detailed=False)
@@ -293,25 +287,16 @@ def load_rules(csv_path, obj_dict):
                 
                 # Get action and translate it
                 action = cleaned_row.get("Action", "")
-                print(f"Debug: Original action: {action}")
-                # First check if it's in the obj_dict (for rulebaseaction objects)
                 if action in obj_dict:
                     action = obj_dict[action]["name"]
-                # Then check if it's in the ACTION_UID_MAP
                 elif action in ACTION_UID_MAP:
                     action = ACTION_UID_MAP[action]
                 else:
-                    # If both translations fail, mark it as unresolved
                     action = f"(unresolved) {action}"
-                print(f"Debug: Translated action: {action}")
                 
-                # Get rule number directly from the first column
-                rule_no = cleaned_row.get(rule_no_field, "").strip()
-                print(f"Debug: Rule number: {rule_no}")
-                
-                # Ensure all required fields exist with both simple and detailed values
+                # Create rule dictionary
                 rule = {
-                    "RuleNo": rule_no,
+                    "RuleNo": cleaned_row.get("RuleNo", ""),
                     "Name": cleaned_row.get("Name", ""),
                     "Source_simple": source_simple,
                     "Source_detailed": source_detailed,
@@ -323,9 +308,8 @@ def load_rules(csv_path, obj_dict):
                     "Comments": cleaned_row.get("Comments", "").replace(",", " ").replace("\n", " ")
                 }
                 rules.append(rule)
-                print(f"Debug: Successfully processed rule {rule_no}")
                 
-            print(f"\nDebug: Total rows processed: {row_count}")
+            print(f"Debug: Successfully processed {len(rules)} rules")
                 
     except Exception as e:
         print(f"Error reading {csv_path}: {str(e)}")
@@ -469,11 +453,11 @@ html_template = """
 # Generate HTML
 def generate_html(rules, output_path):
     try:
-    template = Template(html_template)
-    html_content = template.render(rules=rules)
-    with open(output_path, "w") as f:
-        f.write(html_content)
-        print(f"Interactive report generated: {output_path}")
+        template = Template(html_template)
+        html_content = template.render(rules=rules)
+        with open(output_path, "w") as f:
+            f.write(html_content)
+            print(f"Interactive report generated: {output_path}")
     except Exception as e:
         print(f"Error generating HTML: {str(e)}")
 
